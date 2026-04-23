@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import type { BridgeContext } from './bridge';
 
-const SETTINGS_KEY = 'openchamber.settings';
+const SETTINGS_KEY = 'openkei.settings';
 const OPENCHAMBER_SHARED_SETTINGS_PATH = path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
 const OPENCHAMBER_MAGIC_PROMPTS_PATH = path.join(os.homedir(), '.config', 'openchamber', 'magic-prompts.json');
 const MAGIC_PROMPTS_FILE_VERSION = 1;

@@ -8,7 +8,7 @@ import { openSseProxy } from './sseProxy';
 import { resolveWebviewDevServerUrl } from './webviewDevServer';
 
 export class AgentManagerPanelProvider {
-  public static readonly viewType = 'openchamber.agentManager';
+  public static readonly viewType = 'openkei.agentManager';
 
   private _panel?: vscode.WebviewPanel;
   

@@ -13,7 +13,7 @@ type SessionPanelState = {
 };
 
 export class SessionEditorPanelProvider {
-  public static readonly viewType = 'openchamber.sessionEditor';
+  public static readonly viewType = 'openkei.sessionEditor';
 
   private _cachedStatus: ConnectionStatus = 'connecting';
   private _cachedError?: string;
@@ -112,7 +112,7 @@ export class SessionEditorPanelProvider {
       state.panel.webview.postMessage(response);
 
       if (message.type === 'api:config/settings:save' && response.success) {
-        void vscode.commands.executeCommand('openchamber.internal.settingsSynced', response.data);
+        void vscode.commands.executeCommand('openkei.internal.settingsSynced', response.data);
       }
     }, null, this._context.subscriptions);
   }

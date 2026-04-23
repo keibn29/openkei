@@ -721,7 +721,7 @@ const parseMdFile = (filePath: string): { frontmatter: Record<string, unknown>; 
   try {
     frontmatter = (yaml.parse(match[1]) || {}) as Record<string, unknown>;
   } catch (error) {
-    console.warn(`[OpenChamber][VSCode] Failed to parse frontmatter for ${filePath}, treating as empty:`, error);
+    console.warn(`[OpenKei][VSCode] Failed to parse frontmatter for ${filePath}, treating as empty:`, error);
     frontmatter = {};
   }
   return { frontmatter, body: (match[2] || '').trim() };

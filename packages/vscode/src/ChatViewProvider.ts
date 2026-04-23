@@ -8,7 +8,7 @@ import { openSseProxy } from './sseProxy';
 import { resolveWebviewDevServerUrl } from './webviewDevServer';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'openchamber.chatView';
+  public static readonly viewType = 'openkei.chatView';
 
   private _view?: vscode.WebviewView;
 
@@ -107,7 +107,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       void this._sendMessageWithRetry(response);
 
       if (message.type === 'api:config/settings:save' && response.success) {
-        void vscode.commands.executeCommand('openchamber.internal.settingsSynced', response.data);
+        void vscode.commands.executeCommand('openkei.internal.settingsSynced', response.data);
       }
     });
   }

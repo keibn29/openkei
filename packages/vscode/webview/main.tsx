@@ -35,12 +35,12 @@ declare global {
   }
 }
 
-console.log('[OpenChamber] VS Code webview starting...');
-console.log('[OpenChamber] VS Code webview build:', __OPENCHAMBER_WEBVIEW_BUILD_TIME__);
-console.log('[OpenChamber] Config:', window.__VSCODE_CONFIG__);
+console.log('[OpenKei] VS Code webview starting...');
+console.log('[OpenKei] VS Code webview build:', __OPENCHAMBER_WEBVIEW_BUILD_TIME__);
+console.log('[OpenKei] Config:', window.__VSCODE_CONFIG__);
 try {
   if (window.localStorage.getItem('openchamber_stream_debug') === '1') {
-    console.log('[OpenChamber] Debug: openchamber_stream_debug=1');
+    console.log('[OpenKei] Debug: openchamber_stream_debug=1');
   }
 } catch {
   // ignore
@@ -368,7 +368,7 @@ const extractBodyBase64 = async (input: RequestInfo | URL, init: RequestInit | u
     return bytes.length > 0 ? encodeBase64(bytes) : undefined;
   }
 
-  console.warn('[OpenChamber] Unsupported request body type for proxy request:', body);
+  console.warn('[OpenKei] Unsupported request body type for proxy request:', body);
   return undefined;
 };
 
@@ -395,7 +395,7 @@ const extractBodyText = async (input: RequestInfo | URL, init: RequestInit | und
     return await body.text();
   }
 
-  console.warn('[OpenChamber] Unsupported request body type for direct session proxy:', body);
+  console.warn('[OpenKei] Unsupported request body type for direct session proxy:', body);
   return '';
 };
 
@@ -887,7 +887,7 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
       const data = await sendBridgeMessage('api:models/metadata');
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
-      console.warn('[OpenChamber] Failed to fetch models metadata via bridge, returning empty set:', error);
+      console.warn('[OpenKei] Failed to fetch models metadata via bridge, returning empty set:', error);
       return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
   }
@@ -1121,7 +1121,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const data = await sendBridgeMessage('api:models/metadata');
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
-      console.warn('[OpenChamber] models.dev request failed via bridge, returning empty metadata:', error);
+      console.warn('[OpenKei] models.dev request failed via bridge, returning empty metadata:', error);
       return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
   }
@@ -1187,7 +1187,7 @@ onCommand('createSessionWithPrompt', (payload) => {
         undefined, // agentMentionName
         undefined  // additionalParts
       ).catch((error: unknown) => {
-        console.error('[OpenChamber] Failed to send prompt:', error);
+        console.error('[OpenKei] Failed to send prompt:', error);
       });
     } else {
       // If no provider/model configured, just set the text and let user send manually
@@ -1226,7 +1226,7 @@ import('@/main')
     maybeHideLoadingOverlay();
   })
   .catch((error) => {
-    console.error('[OpenChamber] Failed to bootstrap UI:', error);
+    console.error('[OpenKei] Failed to bootstrap UI:', error);
     // If the UI bundle fails to load, remove the overlay so the user at least sees errors in the root.
     uiMounted = true;
     fadeOutLoadingScreen();

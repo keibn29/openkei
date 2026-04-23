@@ -131,7 +131,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       max-width: 280px;
     }
   </style>
-  <title>OpenChamber</title>
+  <title>OpenKei</title>
 </head>
 <body>
   <!-- Initial loading screen with simplified OpenChamber logo -->
@@ -283,7 +283,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
           })
           .catch((error) => {
             attempt += 1;
-            console.warn('[OpenChamber] VS Code webview dev bundle unavailable, retrying...', error);
+            console.warn('[OpenKei] VS Code webview dev bundle unavailable, retrying...', error);
             setStatus('Waiting for webview dev server (' + hostLabel + ')... attempt ' + attempt);
             window.setTimeout(() => {
               tryLoadDevBundle();

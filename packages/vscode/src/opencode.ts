@@ -158,7 +158,7 @@ let cachedDetectedOpencodeCliPath: string | undefined;
 function resolveOpencodeCliPath(): string | null {
   const configured = (() => {
     try {
-      const config = vscode.workspace.getConfiguration('openchamber');
+      const config = vscode.workspace.getConfiguration('openkei');
       const raw = config.get<string>('opencodeBinary') || '';
       const trimmed = raw.trim();
       if (!trimmed) return null;
@@ -460,7 +460,7 @@ async function waitForReady(
   timeoutMs = 15000,
   authHeaders: Record<string, string> = {}
 ): Promise<ReadyResult> {
-  const outputChannel = vscode.window.createOutputChannel('OpenChamberManager');
+  const outputChannel = vscode.window.createOutputChannel('OpenKeiManager');
   const start = Date.now();
   const candidates = getCandidateBaseUrls(serverUrl);
   let attempts = 0;
@@ -650,7 +650,7 @@ export function createOpenCodeManager(_context: vscode.ExtensionContext): OpenCo
 
   let pendingOperation: Promise<void> | null = null;
 
-  const config = vscode.workspace.getConfiguration('openchamber');
+  const config = vscode.workspace.getConfiguration('openkei');
   const configuredApiUrl = config.get<string>('apiUrl') || '';
   const useConfiguredUrl = configuredApiUrl && configuredApiUrl.trim().length > 0;
 
