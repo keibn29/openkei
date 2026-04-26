@@ -40,6 +40,7 @@ import {
 import { useSync } from '@/sync/use-sync';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { getAllSyncSessions } from '@/sync/sync-refs';
+import { useI18n } from '@/lib/i18n';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
 const EMPTY_PERMISSIONS: PermissionRequest[] = [];
@@ -231,6 +232,7 @@ const HYDRATING_SKELETON_ITEMS: Array<{
 ];
 
 export const ChatContainer: React.FC = () => {
+    const { t } = useI18n();
     // Session UI state
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
     const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -432,11 +434,13 @@ export const ChatContainer: React.FC = () => {
             size="xs"
             onClick={handleReturnToParentSession}
             className="absolute left-3 top-3 z-20 !font-normal bg-[var(--surface-background)]/95"
-            aria-label="Return to parent session"
-            title={parentSession.title?.trim() ? `Return to: ${parentSession.title}` : 'Return to parent session'}
+            aria-label={t('chat.container.returnToParent.aria')}
+            title={parentSession.title?.trim()
+                ? t('chat.container.returnToParent.titleNamed', { title: parentSession.title })
+                : t('chat.container.returnToParent.title')}
         >
             <RiArrowLeftLine className="h-4 w-4" />
-            Parent
+            {t('chat.container.returnToParent.label')}
         </Button>
     ) : null;
 
@@ -640,39 +644,33 @@ export const ChatContainer: React.FC = () => {
         void load();
     }, [currentSessionId, hasLoadedSessionMessages, isPinned, loadMessages, resumeToLatestInstant, sessionStatusForCurrent.type]);
 
-    if (!currentSessionId && !draftOpen) {
-        return (
-            <div
-                className="flex flex-col h-full bg-background"
-                style={isMobile ? { paddingBottom: 'var(--oc-keyboard-inset, 0px)' } : undefined}
-            >
-                <ChatEmptyState />
-            </div>
-        );
-    }
+	if (!currentSessionId && !draftOpen) {
+		return (
+			<div className="flex flex-col h-full bg-background">
+				<ChatEmptyState />
+			</div>
+		);
+	}
 
-    if (!currentSessionId && draftOpen) {
-        return (
-            <div
-                className="relative flex flex-col h-full bg-background transform-gpu"
-                style={isMobile ? { paddingBottom: 'var(--oc-keyboard-inset, 0px)' } : undefined}
-            >
-                {!isDesktopExpandedInput ? (
-                <div className="flex-1 flex items-center justify-center">
-                    <ChatEmptyState />
-                </div>
-                ) : null}
+	if (!currentSessionId && draftOpen) {
+		return (
+			<div className="relative flex flex-col h-full bg-background transform-gpu">
+				{!isDesktopExpandedInput ? (
+				<div className="flex-1 flex items-center justify-center">
+					<ChatEmptyState />
+				</div>
+				) : null}
                 <div
                     className={cn(
                         'relative z-10',
-                        isDesktopExpandedInput
-                            ? 'flex-1 min-h-0 bg-background'
-                            : 'bg-background'
-                    )}
-                >
-                        <ChatInput scrollToBottom={resumeToLatestInstant} />
-                </div>
-            </div>
+						isDesktopExpandedInput
+							? 'flex-1 min-h-0 bg-background'
+							: 'bg-background'
+					)}
+				>
+						<ChatInput scrollToBottom={resumeToLatestInstant} />
+				</div>
+			</div>
         );
     }
 
@@ -680,16 +678,13 @@ export const ChatContainer: React.FC = () => {
         return null;
     }
 
-    if (isSessionHydrating && sessionMessages.length === 0 && !streamingMessageId) {
-        return (
-            <div
-                className="relative flex flex-col h-full bg-background"
-                style={isMobile ? { paddingBottom: 'var(--oc-keyboard-inset, 0px)' } : undefined}
-            >
-                {returnToParentButton}
-                <div
-                    className={cn(
-                        'relative min-h-0',
+	if (isSessionHydrating && sessionMessages.length === 0 && !streamingMessageId) {
+		return (
+			<div className="relative flex flex-col h-full bg-background">
+				{returnToParentButton}
+				<div
+					className={cn(
+						'relative min-h-0',
                         isDesktopExpandedInput
                             ? 'absolute inset-0 opacity-0 pointer-events-none'
                             : 'flex-1'
@@ -728,26 +723,23 @@ export const ChatContainer: React.FC = () => {
                 <div
                     className={cn(
                         'relative z-10',
-                        isDesktopExpandedInput
-                            ? 'flex-1 min-h-0 bg-background'
-                            : 'bg-background'
-                    )}
-                >
-                    <ChatInput scrollToBottom={resumeToLatestInstant} />
-                </div>
+						isDesktopExpandedInput
+							? 'flex-1 min-h-0 bg-background'
+							: 'bg-background'
+					)}
+				>
+					<ChatInput scrollToBottom={resumeToLatestInstant} />
+				</div>
             </div>
         );
     }
 
-    if (sessionMessages.length === 0 && !streamingMessageId) {
-        return (
-            <div
-                className="relative flex flex-col h-full bg-background transform-gpu"
-                style={isMobile ? { paddingBottom: 'var(--oc-keyboard-inset, 0px)' } : undefined}
-            >
-                {returnToParentButton}
-                <div
-                    className={cn(
+	if (sessionMessages.length === 0 && !streamingMessageId) {
+		return (
+			<div className="relative flex flex-col h-full bg-background transform-gpu">
+				{returnToParentButton}
+				<div
+					className={cn(
                         'relative min-h-0',
                         isDesktopExpandedInput
                             ? 'absolute inset-0 opacity-0 pointer-events-none'
@@ -764,25 +756,22 @@ export const ChatContainer: React.FC = () => {
                 <div
                     className={cn(
                         'relative z-10',
-                        isDesktopExpandedInput
-                            ? 'flex-1 min-h-0 bg-background'
-                            : 'bg-background'
-                    )}
-                >
-                    <ChatInput scrollToBottom={resumeToLatestInstant} />
-                </div>
+						isDesktopExpandedInput
+							? 'flex-1 min-h-0 bg-background'
+							: 'bg-background'
+					)}
+				>
+					<ChatInput scrollToBottom={resumeToLatestInstant} />
+				</div>
             </div>
         );
     }
 
-    return (
-        <div
-            className="relative flex flex-col h-full bg-background"
-            style={isMobile ? { paddingBottom: 'var(--oc-keyboard-inset, 0px)' } : undefined}
-        >
-            {returnToParentButton}
-            <ChatViewport
-                currentSessionId={currentSessionId}
+	return (
+		<div className="relative flex flex-col h-full bg-background">
+			{returnToParentButton}
+			<ChatViewport
+				currentSessionId={currentSessionId}
                 isDesktopExpandedInput={isDesktopExpandedInput}
                 isMobile={isMobile}
                 stickyUserHeader={stickyUserHeader}
@@ -809,13 +798,13 @@ export const ChatContainer: React.FC = () => {
             <div
                 className={cn(
                     'relative z-10',
-                    isDesktopExpandedInput
-                        ? 'flex-1 min-h-0 bg-background'
-                        : 'bg-background'
-                )}
-            >
-                {!isDesktopExpandedInput && sessionMessages.length > 0 && (
-                    <ScrollToBottomButton
+					isDesktopExpandedInput
+						? 'flex-1 min-h-0 bg-background'
+						: 'bg-background'
+				)}
+			>
+				{!isDesktopExpandedInput && sessionMessages.length > 0 && (
+					<ScrollToBottomButton
                         visible={timelineController.showScrollToBottom}
                         onClick={navigation.resumeToLatest}
                     />

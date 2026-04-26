@@ -33,6 +33,7 @@ import { detectSayTtsCapability } from './lib/tts/capability-runtime.js';
 import { createTerminalRuntime } from './lib/terminal/runtime.js';
 import {
   createGlobalUiEventBroadcaster,
+  createGlobalMessageStreamHub,
   createMessageStreamWsRuntime,
 } from './lib/event-stream/index.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
@@ -648,11 +649,17 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
 const maybeSendPushForTrigger = (...args) => notificationTriggerRuntime.maybeSendPushForTrigger(...args);
 const setAutoAcceptSession = (...args) => notificationTriggerRuntime.setAutoAcceptSession(...args);
 
+const globalMessageStreamHub = createGlobalMessageStreamHub({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+});
+
 const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
   waitForOpenCodePort: (...args) => waitForOpenCodePort(...args),
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   parseSseDataPayload: (...args) => parseSseDataPayload(...args),
+  globalEventHub: globalMessageStreamHub,
   onPayload: (payload) => {
     maybeCacheSessionInfoFromEvent(payload);
     void maybeSendPushForTrigger(payload);
@@ -749,6 +756,7 @@ const serverUtilsRuntime = createServerUtilsRuntime({
 const setOpenCodePort = (...args) => serverUtilsRuntime.setOpenCodePort(...args);
 const waitForOpenCodePort = (...args) => serverUtilsRuntime.waitForOpenCodePort(...args);
 const buildAugmentedPath = (...args) => serverUtilsRuntime.buildAugmentedPath(...args);
+const buildManagedOpenCodePath = (...args) => serverUtilsRuntime.buildManagedOpenCodePath(...args);
 const parseSseDataPayload = (...args) => serverUtilsRuntime.parseSseDataPayload(...args);
 const staticRoutesRuntime = createStaticRoutesRuntime({
   fs,
@@ -866,6 +874,8 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   setupProxy: (...args) => setupProxy(...args),
   ensureOpenCodeApiPrefix,
   clearResolvedOpenCodeBinary,
+  buildAugmentedPath,
+  buildManagedOpenCodePath,
 });
 
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
@@ -1155,6 +1165,7 @@ async function main(options = {}) {
     rejectWebSocketUpgrade,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    globalEventHub: globalMessageStreamHub,
     processForwardedEventPayload,
     messageStreamWsClients: uiNotificationWsClients,
     terminalHeartbeatIntervalMs: TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS,

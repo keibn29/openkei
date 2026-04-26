@@ -158,21 +158,32 @@
   }
 
   /* Fix mobile viewport height */
-  :root.mobile-pointer:not(.desktop-runtime),
-  :root.mobile-pointer:not(.desktop-runtime) body {
+  :root.mobile-pointer:not(.desktop-runtime) {
     height: 100%;
     height: -webkit-fill-available;
     overflow: hidden;
   }
 
-  /* Prevent iOS keyboard from scrolling the page */
   :root.device-mobile:not(.desktop-runtime) body,
   :root.device-mobile:not(.desktop-runtime) #root {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--oc-visual-viewport-height, 100dvh);
     width: 100%;
     overflow: hidden;
     overscroll-behavior-y: none;
+  }
+
+  :root.device-android:not(.desktop-runtime) body,
+  :root.device-android:not(.desktop-runtime) #root {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    height: 100%;
+    min-height: 0;
   }
 
   /* Fix main layout container */
@@ -180,16 +191,6 @@
     height: 100vh;
     height: -webkit-fill-available;
     min-height: 0;
-  }
-
-  /* Fix header positioning */
-  :root.device-mobile:not(.desktop-runtime) .header-safe-area {
-    position: relative;
-    top: auto;
-    left: auto;
-    right: auto;
-    width: 100%;
-    z-index: 10;
   }
 
   /* Fix main content area */
@@ -287,20 +288,8 @@
       padding-bottom: var(--oc-safe-area-bottom-visual);
     }
 
-    /* iOS keyboard home indicator safe area - used when keyboard is open */
     :root.device-mobile:not(.desktop-runtime) .ios-keyboard-safe-area {
       padding-bottom: calc(var(--oc-keyboard-home-indicator, 34px) + var(--oc-safe-area-bottom-visual, 0px)) !important;
-    }
-
-    /* Prevent keyboard-induced page scroll on iOS PWA */
-    :root.device-mobile:not(.desktop-runtime) body {
-      min-height: 100vh;
-      min-height: -webkit-fill-available;
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      overflow: hidden;
-      overscroll-behavior-y: none;
     }
 
     /* Fix iOS viewport issues */
