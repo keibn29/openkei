@@ -1144,11 +1144,26 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
 // Listen for addToContext command from extension
 onCommand('addToContext', (payload) => {
-  const { text } = payload as { text: string };
+  const { text, selectionContext } = payload as {
+    text: string;
+    selectionContext?: {
+      mentionText: string;
+      filePath: string;
+      startLine: number;
+      endLine: number;
+      selectedText: string;
+      languageId?: string;
+    };
+  };
 
   import('@/sync/input-store').then(({ useInputStore }) => {
-    useInputStore.getState().setPendingInputText(text, 'append');
+    useInputStore.getState().setPendingInputText(text, 'append-inline');
+    if (selectionContext) {
+      useInputStore.getState().appendPendingSelectionContexts([selectionContext]);
+    }
   });
+
+  window.dispatchEvent(new CustomEvent('openchamber:navigate', { detail: { view: 'chat' } }));
 });
 
 onCommand('addFileMentions', (payload) => {

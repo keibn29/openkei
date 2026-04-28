@@ -762,6 +762,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         mime: a.mimeType,
         url: a.dataUrl,
         filename: a.filename,
+        ...(a.filePartSource ? { source: a.filePartSource } : {}),
       }))
 
       await routeMessage({
@@ -781,6 +782,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
             mime: a.mimeType,
             url: a.dataUrl,
             filename: a.filename,
+            ...(a.filePartSource ? { source: a.filePartSource } : {}),
           })),
         })),
       })
@@ -837,6 +839,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       mime: a.mimeType,
       url: a.dataUrl,
       filename: a.filename,
+      ...(a.filePartSource ? { source: a.filePartSource } : {}),
     }))
 
     await routeMessage({
@@ -856,6 +859,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           mime: a.mimeType,
           url: a.dataUrl,
           filename: a.filename,
+          ...(a.filePartSource ? { source: a.filePartSource } : {}),
         })),
       })),
     })

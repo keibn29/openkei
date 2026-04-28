@@ -22,7 +22,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useInputStore } from '@/sync/input-store';
+import { useInputStore, type VSCodeSelectionContext } from '@/sync/input-store';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import { useUserMessageHistory } from '@/sync/sync-context';
@@ -695,6 +695,86 @@ const loadConfirmedMentions = (sessionId: string | null): Set<string> => {
     return new Set();
 };
 
+type MentionRange = {
+    startLine: number;
+    endLine: number;
+};
+
+type ParsedFileMention = {
+    mentionText: string;
+    filePath: string;
+    range: MentionRange | null;
+    sourceText: {
+        value: string;
+        start: number;
+        end: number;
+    };
+};
+
+const buildRangeToken = (range: MentionRange): string => (
+    range.startLine === range.endLine
+        ? `#L${range.startLine}`
+        : `#L${range.startLine}-#L${range.endLine}`
+);
+
+const buildSelectionMentionText = (filePath: string, range: MentionRange): string => (
+    `@${filePath}:<${buildRangeToken(range)}>`
+);
+
+const buildSelectionSyntheticText = (context: VSCodeSelectionContext): string => {
+    const rangeToken = buildRangeToken({ startLine: context.startLine, endLine: context.endLine });
+    const language = typeof context.languageId === 'string' ? context.languageId.trim() : '';
+    const fencedLanguage = language.length > 0 ? language : 'text';
+    return `Selected range from ${context.filePath} (${rangeToken})\n\n\`\`\`${fencedLanguage}\n${context.selectedText}\n\`\`\``;
+};
+
+const parseInlineFileMention = (rawMentionPath: string, offset: number): ParsedFileMention | null => {
+    const trimmed = String(rawMentionPath || '')
+        .trim()
+        .replace(/^[`"'<(]+/, '');
+
+    if (!trimmed) {
+        return null;
+    }
+
+    const rangeMatch = trimmed.match(/^(.*):<#L(\d+)(?:-#L(\d+))?>$/i);
+    if (rangeMatch) {
+        const filePath = rangeMatch[1]?.trim().replace(/[),.;!?`"']+$/g, '');
+        const startLine = Number(rangeMatch[2]);
+        const endLine = Number(rangeMatch[3] ?? rangeMatch[2]);
+        if (!filePath || !Number.isFinite(startLine) || !Number.isFinite(endLine)) {
+            return null;
+        }
+        const mentionText = buildSelectionMentionText(filePath, { startLine, endLine });
+        return {
+            mentionText,
+            filePath,
+            range: { startLine, endLine },
+            sourceText: {
+                value: mentionText,
+                start: offset,
+                end: offset + mentionText.length,
+            },
+        };
+    }
+
+    const filePath = trimmed.replace(/[),.;:!?`"'>]+$/g, '');
+    if (!filePath) {
+        return null;
+    }
+
+    return {
+        mentionText: `@${filePath}`,
+        filePath,
+        range: null,
+        sourceText: {
+            value: `@${filePath}`,
+            start: offset,
+            end: offset + filePath.length + 1,
+        },
+    };
+};
+
 const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
     const { t } = useI18n();
     // Track if we restored a draft on mount (for text selection)
@@ -714,8 +794,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     // Restore confirmed mentions from localStorage on mount
     const confirmedMentionsRef = React.useRef<Set<string>>(loadConfirmedMentions(initialSessionIdRef.current));
     // Helper: check if a mention path looks like a file/folder (has path separators, extension, or was explicitly confirmed)
-    const isConfirmedFilePath = (text: string): boolean =>
-        text.includes('/') || text.includes('\\') || text.includes('.') || confirmedMentionsRef.current.has(text);
+    const isConfirmedFilePath = React.useCallback(
+        (text: string): boolean => text.includes('/') || text.includes('\\') || text.includes('.') || confirmedMentionsRef.current.has(text),
+        [],
+    );
     const [inputMode, setInputMode] = React.useState<'normal' | 'shell'>('normal');
     const [isDragging, setIsDragging] = React.useState(false);
     const [isInternalDrag, setIsInternalDrag] = React.useState(false);
@@ -751,6 +833,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const skipNextDraftPersistRef = React.useRef(false);
     const lastPersistedDraftRef = React.useRef<Map<string, string>>(new Map());
     const currentSessionIdForDraftRef = React.useRef<string | null>(null);
+    const vscodeSelectionContextsByDraftRef = React.useRef<Map<string, Map<string, VSCodeSelectionContext>>>(new Map());
 
     // TODO: port sendMessage to session-actions (complex — creates sessions, handles attachments, etc.)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -773,6 +856,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const setPendingInputText = useInputStore((s) => s.setPendingInputText);
     const pendingInputText = useInputStore((s) => s.pendingInputText);
     const consumePendingSyntheticParts = useInputStore((s) => s.consumePendingSyntheticParts);
+    const pendingSelectionContexts = useInputStore((s) => s.pendingSelectionContexts);
+    const consumePendingSelectionContexts = useInputStore((s) => s.consumePendingSelectionContexts);
     const acknowledgeSessionAbort = useSessionUIStore((s) => s.acknowledgeSessionAbort);
     const abortCurrentOperation = React.useCallback(
         (sessionIdOverride?: string) => sessionActions.abortCurrentOperation(sessionIdOverride ?? currentSessionId ?? ''),
@@ -808,6 +893,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const setSessionAutoAccept = usePermissionStore((state) => state.setSessionAutoAccept);
     const composerHighlightRef = React.useRef<HTMLDivElement | null>(null);
+
+    const resolveCurrentDraftKey = React.useCallback(
+        () => getDraftKey(newSessionDraftOpen ? null : currentSessionId),
+        [currentSessionId, newSessionDraftOpen],
+    );
+
+    const getSelectionContextsForDraft = React.useCallback((draftKey: string) => {
+        const existing = vscodeSelectionContextsByDraftRef.current.get(draftKey);
+        if (existing) {
+            return existing;
+        }
+        const next = new Map<string, VSCodeSelectionContext>();
+        vscodeSelectionContextsByDraftRef.current.set(draftKey, next);
+        return next;
+    }, []);
 
     const isDesktopExpanded = isExpandedInput && !isMobile;
     const chatInputRadius = 'var(--radius-xl)';
@@ -845,7 +945,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
         }
         return false;
-    }, [inputMode, message, knownAgentNames]);
+    }, [inputMode, isConfirmedFilePath, message, knownAgentNames]);
 
     const highlightedComposerContent = React.useMemo(() => {
         if (!hasInlineMentionForHighlight) {
@@ -885,7 +985,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
 
         return parts;
-    }, [hasInlineMentionForHighlight, message, knownAgentNames]);
+    }, [hasInlineMentionForHighlight, isConfirmedFilePath, message, knownAgentNames]);
 
     const sanitizeAttachmentsForSend = React.useCallback(
         (files: AttachedFile[] | undefined): AttachedFile[] => (files ?? [])
@@ -898,20 +998,22 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         [],
     );
 
-    const extractInlineFileMentions = React.useCallback((rawText: string): { sanitizedText: string; attachments: AttachedFile[] } => {
+    const extractInlineFileMentions = React.useCallback((rawText: string): { sanitizedText: string; attachments: AttachedFile[]; syntheticParts: Array<{ text: string; synthetic: true }> } => {
         if (!rawText || !rawText.includes('@')) {
-            return { sanitizedText: rawText, attachments: [] };
+            return { sanitizedText: rawText, attachments: [], syntheticParts: [] };
         }
 
         const clientDirectory = opencodeClient.getDirectory() || '';
         const root = (chatSearchDirectory || clientDirectory).replace(/\\/g, '/').replace(/\/+$/, '');
-        const seenPaths = new Set<string>();
+        const seenMentions = new Set<string>();
+        const seenSyntheticMentions = new Set<string>();
         const attachments: AttachedFile[] = [];
+        const syntheticParts: Array<{ text: string; synthetic: true }> = [];
+        const selectionContextMap = getSelectionContextsForDraft(resolveCurrentDraftKey());
 
         const mentionRegex = /@([^\s]+)/g;
         let match: RegExpExecArray | null;
         while ((match = mentionRegex.exec(rawText)) !== null) {
-            const rawMentionPath = match[1];
             const offset = match.index;
             const original = rawText;
             const charBefore = offset > 0 ? original[offset - 1] : null;
@@ -919,30 +1021,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 continue;
             }
 
-            const mentionPath = String(rawMentionPath || '')
-                .trim()
-                .replace(/^[`"'<(]+/, '')
-                .replace(/[),.;:!?`"'>]+$/g, '');
-            if (!mentionPath) {
+            const parsedMention = parseInlineFileMention(match[1], offset);
+            if (!parsedMention) {
                 continue;
             }
 
-            if (knownAgentNamesRef.current.has(mentionPath.toLowerCase())) {
+            if (knownAgentNamesRef.current.has(parsedMention.filePath.toLowerCase())) {
                 continue;
             }
 
-            const looksLikeFilePath = isConfirmedFilePath(mentionPath);
-            if (!looksLikeFilePath) {
+            if (!isConfirmedFilePath(parsedMention.filePath)) {
                 continue;
             }
 
-            const normalizedMentionPath = mentionPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+            const normalizedMentionPath = parsedMention.filePath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
             if (!normalizedMentionPath) {
                 continue;
             }
 
-            const serverPath = mentionPath.startsWith('/')
-                ? mentionPath.replace(/\\/g, '/')
+            const serverPath = parsedMention.filePath.startsWith('/')
+                ? parsedMention.filePath.replace(/\\/g, '/')
                 : root
                     ? `${root}/${normalizedMentionPath}`
                     : null;
@@ -952,10 +1050,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
 
             const normalizedServerPath = serverPath.replace(/\/+/g, '/');
-            if (seenPaths.has(normalizedServerPath)) {
+            if (seenMentions.has(parsedMention.mentionText)) {
                 continue;
             }
-            seenPaths.add(normalizedServerPath);
+            seenMentions.add(parsedMention.mentionText);
 
             const filename = normalizedMentionPath.split('/').filter(Boolean).pop() || normalizedMentionPath;
             attachments.push({
@@ -967,14 +1065,31 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 dataUrl: toServerFileUrl(normalizedServerPath),
                 source: 'server',
                 serverPath: normalizedServerPath,
+                filePartSource: {
+                    type: 'file',
+                    path: normalizedServerPath,
+                    text: parsedMention.sourceText,
+                },
             });
+
+            if (parsedMention.range && !seenSyntheticMentions.has(parsedMention.mentionText)) {
+                const selectionContext = selectionContextMap.get(parsedMention.mentionText);
+                if (selectionContext) {
+                    syntheticParts.push({
+                        text: buildSelectionSyntheticText(selectionContext),
+                        synthetic: true,
+                    });
+                    seenSyntheticMentions.add(parsedMention.mentionText);
+                }
+            }
         }
 
         return {
             sanitizedText: rawText,
             attachments,
+            syntheticParts,
         };
-    }, [chatSearchDirectory]);
+    }, [chatSearchDirectory, getSelectionContextsForDraft, isConfirmedFilePath, resolveCurrentDraftKey]);
     const [autocompleteOverlayPosition, setAutocompleteOverlayPosition] = React.useState<AutocompleteOverlayPosition | null>(null);
     const abortTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevWasAbortedRef = React.useRef(false);
@@ -1229,6 +1344,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (pendingInputText !== null) {
             const pending = consumePendingInputText();
             if (pending?.text) {
+                let inlineCursorPosition: number | null = null;
                 if (pending.mode === 'append') {
                     setMessage((prev) => {
                         const next = pending.text;
@@ -1236,17 +1352,65 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         return appendWithLineBreaks(prev, next);
                     });
                 } else if (pending.mode === 'append-inline') {
-                    setMessage((prev) => appendInlineText(prev, pending.text));
+                    const textarea = textareaRef.current;
+                    if (textarea) {
+                        const start = textarea.selectionStart ?? messageRef.current.length;
+                        const end = textarea.selectionEnd ?? start;
+                        setMessage((prev) => {
+                            const before = prev.substring(0, start);
+                            const after = prev.substring(end);
+                            const nextValue = appendInlineText(before, pending.text);
+                            inlineCursorPosition = nextValue.length;
+                            return `${nextValue}${after}`;
+                        });
+                    } else {
+                        setMessage((prev) => appendInlineText(prev, pending.text));
+                    }
                 } else {
                     setMessage(pending.text);
                 }
                 // Focus textarea after setting message
                 setTimeout(() => {
-                    textareaRef.current?.focus();
+                    const textarea = textareaRef.current;
+                    textarea?.focus();
+                    if (textarea && inlineCursorPosition !== null) {
+                        textarea.selectionStart = inlineCursorPosition;
+                        textarea.selectionEnd = inlineCursorPosition;
+                        cursorPosRef.current = inlineCursorPosition;
+                    }
                 }, 0);
             }
         }
     }, [pendingInputText, consumePendingInputText]);
+
+    React.useEffect(() => {
+        if (pendingSelectionContexts === null) {
+            return;
+        }
+
+        const incoming = consumePendingSelectionContexts();
+        if (!incoming || incoming.length === 0) {
+            return;
+        }
+
+        const contextMap = getSelectionContextsForDraft(resolveCurrentDraftKey());
+        incoming.forEach((context) => {
+            if (!context.mentionText) {
+                return;
+            }
+            contextMap.set(context.mentionText, context);
+        });
+    }, [consumePendingSelectionContexts, getSelectionContextsForDraft, pendingSelectionContexts, resolveCurrentDraftKey]);
+
+    React.useEffect(() => {
+        const contextMap = getSelectionContextsForDraft(resolveCurrentDraftKey());
+        const activeTexts = [message, ...queuedMessages.map((queued) => queued.content)];
+        for (const mentionText of Array.from(contextMap.keys())) {
+            if (!activeTexts.some((text) => text.includes(mentionText))) {
+                contextMap.delete(mentionText);
+            }
+        }
+    }, [getSelectionContextsForDraft, message, queuedMessages, resolveCurrentDraftKey]);
 
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = queuedMessages.length > 0;
@@ -1347,7 +1511,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         for (let i = 0; i < queuedMessages.length; i++) {
             const queuedMsg = queuedMessages[i];
             const { sanitizedText, mention } = parseAgentMentions(queuedMsg.content, agents);
-            const { sanitizedText: queuedText, attachments: mentionAttachments } = extractInlineFileMentions(sanitizedText);
+            const {
+                sanitizedText: queuedText,
+                attachments: mentionAttachments,
+                syntheticParts: mentionSyntheticParts,
+            } = extractInlineFileMentions(sanitizedText);
 
             // Use agent mention from first message that has one
             if (!agentMentionName && mention?.name) {
@@ -1369,13 +1537,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     attachments: [...queuedAttachments, ...mentionAttachments],
                 });
             }
+
+            mentionSyntheticParts.forEach((part) => {
+                additionalParts.push(part);
+            });
         }
 
         // Add current input (skip for queued-only auto-send)
         if (!queuedOnly && hasContent) {
             const messageToSend = message.replace(/^\n+|\n+$/g, '');
             const { sanitizedText, mention } = parseAgentMentions(messageToSend, agents);
-            const { sanitizedText: messageText, attachments: mentionAttachments } = extractInlineFileMentions(sanitizedText);
+            const {
+                sanitizedText: messageText,
+                attachments: mentionAttachments,
+                syntheticParts: mentionSyntheticParts,
+            } = extractInlineFileMentions(sanitizedText);
             const attachmentsToSend = sanitizeAttachmentsForSend(sendableAttachedFiles);
 
             if (!agentMentionName && mention?.name) {
@@ -1393,6 +1569,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     attachments: [...attachmentsToSend, ...mentionAttachments],
                 });
             }
+
+            mentionSyntheticParts.forEach((part) => {
+                additionalParts.push(part);
+            });
         }
 
         const sessionKey = currentSessionId ?? (newSessionDraftOpen ? 'draft' : null);
@@ -1449,6 +1629,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             clearQueue(currentSessionId);
         }
         if (!queuedOnly) {
+            vscodeSelectionContextsByDraftRef.current.delete(resolveCurrentDraftKey());
             setMessage('');
             confirmedMentionsRef.current.clear();
             // Clear per-session draft on submit

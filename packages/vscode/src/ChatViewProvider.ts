@@ -133,7 +133,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this._sendCachedState();
   }
 
-  public addTextToInput(text: string) {
+  public addSelectionToInput(payload: {
+    text: string;
+    selectionContext?: {
+      mentionText: string;
+      filePath: string;
+      startLine: number;
+      endLine: number;
+      selectedText: string;
+      languageId?: string;
+    };
+  }) {
     if (this._view) {
       // Reveal the webview panel
       this._view.show(true);
@@ -141,7 +151,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this._view.webview.postMessage({
         type: 'command',
         command: 'addToContext',
-        payload: { text }
+        payload,
       });
     }
   }

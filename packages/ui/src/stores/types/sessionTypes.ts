@@ -23,6 +23,15 @@ export interface AttachedFile {
     size: number;
     source: "local" | "server";
     serverPath?: string;
+    filePartSource?: {
+        type: "file";
+        path: string;
+        text: {
+            value: string;
+            start: number;
+            end: number;
+        };
+    };
 }
 
 export type EditPermissionMode = 'allow' | 'ask' | 'deny' | 'full';

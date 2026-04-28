@@ -86,6 +86,7 @@ export async function activate(context: vscode.ExtensionContext) {
   };
 
   const maybeMoveChatToRightSidebarOnStartup = async () => {
+    if (context.extensionMode === vscode.ExtensionMode.Development) return;
     if (isCursorLikeHost()) return;
 
     const attempted = context.globalState.get<boolean>('openkei.sidebarAutoMoveAttempted') || false;
@@ -256,13 +257,21 @@ export async function activate(context: vscode.ExtensionContext) {
       // Get line numbers (1-based for display)
       const startLine = selection.start.line + 1;
       const endLine = selection.end.line + 1;
-      const lineRange = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+      const rangeText = startLine === endLine ? `#L${startLine}` : `#L${startLine}-#L${endLine}`;
+      const mentionText = `@${filePath}:<${rangeText}>`;
 
-      // Format as file path with line numbers, followed by markdown code block
-      const contextText = `${filePath}:${lineRange}\n\`\`\`${languageId}\n${selectedText}\n\`\`\``;
-
-      // Send to webview and reveal the panel
-      chatViewProvider?.addTextToInput(contextText);
+      // Send visible mention text plus structured selection metadata to the webview.
+      chatViewProvider?.addSelectionToInput({
+        text: mentionText,
+        selectionContext: {
+          mentionText,
+          filePath,
+          startLine,
+          endLine,
+          selectedText,
+          languageId,
+        },
+      });
 
       // Focus the chat panel
       vscode.commands.executeCommand('openkei.focusChat');

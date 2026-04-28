@@ -12,16 +12,28 @@ export type SyntheticContextPart = {
   synthetic?: boolean
 }
 
+export type VSCodeSelectionContext = {
+  mentionText: string
+  filePath: string
+  startLine: number
+  endLine: number
+  selectedText: string
+  languageId?: string
+}
+
 export type InputState = {
   pendingInputText: string | null
   pendingInputMode: "replace" | "append" | "append-inline"
   pendingSyntheticParts: SyntheticContextPart[] | null
+  pendingSelectionContexts: VSCodeSelectionContext[] | null
   attachedFiles: AttachedFile[]
 
   setPendingInputText: (text: string | null, mode?: "replace" | "append" | "append-inline") => void
   consumePendingInputText: () => { text: string; mode: "replace" | "append" | "append-inline" } | null
   setPendingSyntheticParts: (parts: SyntheticContextPart[] | null) => void
   consumePendingSyntheticParts: () => SyntheticContextPart[] | null
+  appendPendingSelectionContexts: (parts: VSCodeSelectionContext[]) => void
+  consumePendingSelectionContexts: () => VSCodeSelectionContext[] | null
   addAttachedFile: (file: File) => Promise<void>
   removeAttachedFile: (id: string) => void
   clearAttachedFiles: () => void
@@ -31,6 +43,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
   pendingInputText: null,
   pendingInputMode: "replace",
   pendingSyntheticParts: null,
+  pendingSelectionContexts: null,
   attachedFiles: [],
 
   setPendingInputText: (text, mode = "replace") =>
@@ -51,6 +64,24 @@ export const useInputStore = create<InputState>()((set, get) => ({
       set({ pendingSyntheticParts: null })
     }
     return pendingSyntheticParts
+  },
+
+  appendPendingSelectionContexts: (parts) => {
+    if (!parts.length) return
+    set((state) => ({
+      pendingSelectionContexts: [
+        ...(state.pendingSelectionContexts ?? []),
+        ...parts,
+      ],
+    }))
+  },
+
+  consumePendingSelectionContexts: () => {
+    const { pendingSelectionContexts } = get()
+    if (pendingSelectionContexts !== null) {
+      set({ pendingSelectionContexts: null })
+    }
+    return pendingSelectionContexts
   },
 
   addAttachedFile: async (file: File) => {

@@ -106,6 +106,15 @@ type FileInputLite = {
   mime: string;
   filename?: string;
   url: string;
+  source?: {
+    type: 'file';
+    path: string;
+    text: {
+      value: string;
+      start: number;
+      end: number;
+    };
+  };
 };
 
 export type DirectorySwitchResult = {
@@ -591,6 +600,7 @@ class OpencodeService {
       mime: normalized.mime,
       filename: normalized.filename,
       url: normalized.url,
+      ...(file.source ? { source: file.source } : {}),
     };
   }
 

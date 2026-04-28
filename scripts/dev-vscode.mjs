@@ -153,9 +153,12 @@ console.log(`[dev:vscode] Extension: ${extensionPath}`);
 const { host: devServerHost, port: devServerPort } = resolveDevServerAddress();
 console.log(`[dev:vscode] Waiting for webview dev server at ${devServerHost}:${devServerPort}`);
 
-const ready = await waitForPort(devServerHost, devServerPort, 30000, () => shuttingDown || dev.exitCode !== null || dev.signalCode !== null);
+const ready = await waitForPort(devServerHost, devServerPort, 60000, () => shuttingDown || dev.exitCode !== null || dev.signalCode !== null);
 if (!ready) {
-  console.warn('[dev:vscode] Webview dev server not ready in time, opening extension host anyway');
+  console.error(`[dev:vscode] Webview dev server did not become ready at ${devServerHost}:${devServerPort}`);
+  console.error('[dev:vscode] Aborting launch. Ensure `packages/vscode` dev webview server starts on port 5173 before opening the extension host.');
+  await stopChildTree(dev);
+  process.exit(1);
 }
 
 const host = run(

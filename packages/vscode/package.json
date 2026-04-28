@@ -196,6 +196,14 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "openkei.addToContext",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
     "configuration": {
       "title": "OpenKei",
       "properties": {
