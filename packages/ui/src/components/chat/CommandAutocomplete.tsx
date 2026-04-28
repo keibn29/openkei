@@ -391,7 +391,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                             borderColor: 'color-mix(in srgb, var(--primary-base) 28%, transparent)',
                           }}
                         >
-                          OpenChamber
+                          OpenKei
                         </span>
                       ) : isSystem ? (
                         <span className="text-[10px] leading-none uppercase font-bold tracking-tight bg-[var(--status-warning-background)] text-[var(--status-warning)] border-[var(--status-warning-border)] px-1.5 py-1 rounded border flex-shrink-0">

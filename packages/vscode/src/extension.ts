@@ -145,7 +145,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand('openkei.chatView.focus');
       } catch (e) {
         outputChannel?.appendLine(`[OpenKei] openkei.chatView.focus failed: ${e}`);
-        vscode.window.showErrorMessage(`OpenChamber: Failed to open sidebar - ${e}`);
+        vscode.window.showErrorMessage(`OpenKei: Failed to open sidebar - ${e}`);
       }
     })
   );
@@ -229,7 +229,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await openCodeManager?.restart();
         vscode.window.showInformationMessage('OpenKei: API connection restarted');
       } catch (e) {
-        vscode.window.showErrorMessage(`OpenChamber: Failed to restart API - ${e}`);
+        vscode.window.showErrorMessage(`OpenKei: Failed to restart API - ${e}`);
       }
     })
   );
@@ -523,7 +523,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const lines = [
         `Time: ${new Date().toISOString()}`,
-        `OpenChamber version: ${extensionVersion || '(unknown)'}`,
+        `OpenKei version: ${extensionVersion || '(unknown)'}`,
         `OpenCode Version: ${debug?.version ?? '(unknown)'}`,
         `VS Code version: ${vscode.version}`,
         `Platform: ${process.platform} ${process.arch}`,

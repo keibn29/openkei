@@ -230,7 +230,7 @@ export const buildOpenCodeStatusReport = async (): Promise<string> => {
 
   const lines: string[] = [];
   lines.push(`Time: ${now.toISOString()}`);
-  lines.push(`OpenChamber version: ${appVersion}`);
+  lines.push(`OpenKei version: ${appVersion}`);
   lines.push(`Runtime: ${origin || '(unknown)'} (api=${origin ? origin + '/api' : '(unknown)'})`);
   lines.push(`Event stream: ${eventStreamStatus}`);
   lines.push(`Directory: ${directory || '(none)'}`);

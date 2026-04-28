@@ -116,7 +116,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
           <OpenChamberLogo width={64} height={64} />
 
           <div className="space-y-1">
-            <h2 className="text-lg font-semibold">OpenChamber</h2>
+            <h2 className="text-lg font-semibold">OpenKei</h2>
             {displayVersion && (
               <p className="typography-meta text-muted-foreground">
                 {t('aboutDialog.versionLabel', { version: displayVersion })}
@@ -151,7 +151,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
 
           <div className="flex items-center gap-4 pt-2">
             <a
-              href="https://github.com/btriapitsyn/openchamber"
+              href="https://github.com/keindl29/openkei"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"

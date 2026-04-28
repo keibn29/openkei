@@ -84,6 +84,22 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
   height = 70,
 }) => {
   const { t } = useI18n();
+  const vscodeBrandIcon = typeof window !== 'undefined'
+    ? (window as unknown as { __VSCODE_CONFIG__?: { brandIcon?: unknown } }).__VSCODE_CONFIG__?.brandIcon
+    : null;
+
+  if (typeof vscodeBrandIcon === 'string' && vscodeBrandIcon.trim().length > 0) {
+    return (
+      <img
+        src={vscodeBrandIcon}
+        alt={t('openChamberLogo.aria.logo')}
+        width={width}
+        height={height}
+        className={className}
+      />
+    );
+  }
+
   const themeContext = useOptionalThemeSystem();
 
   let isDark = true;

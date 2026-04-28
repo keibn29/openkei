@@ -54,6 +54,8 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
 
   const scriptPath = vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'assets', 'index.js');
   const scriptUri = webview.asWebviewUri(scriptPath);
+  const appIconPath = vscode.Uri.joinPath(extensionUri, 'assets', 'app-icon.png');
+  const appIconUri = webview.asWebviewUri(appIconPath);
   const normalizedDevServerUrl = asCspToken(devServerUrl)?.replace(/\/$/, '') ?? null;
   const devServerOrigin = toOrigin(normalizedDevServerUrl);
   const styleSrc = uniqueTokens([webview.cspSource, "'unsafe-inline'", devServerOrigin]);
@@ -67,11 +69,6 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
   // Use VS Code CSS variables for proper theme integration
   // These variables are automatically provided by VS Code to webviews
   // 
-  // Logo geometry matches OpenChamberLogo.tsx:
-  // edge=48, cos30=0.866, sin30=0.5, centerY=50
-  // top=(50, 2), left=(8.432, 26), right=(91.568, 26), center=(50, 50)
-  // bottomLeft=(8.432, 74), bottomRight=(91.568, 74), bottom=(50, 98)
-  // topFaceCenterY = (2 + 26 + 50 + 26) / 4 = 26
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,20 +101,11 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       opacity: 0;
       pointer-events: none;
     }
-    /* Logo colors use VS Code foreground color */
-    #initial-loading .logo-stroke {
-      stroke: var(--vscode-foreground);
-    }
-    #initial-loading .logo-fill {
-      fill: var(--vscode-foreground);
-      opacity: 0.15;
-    }
-    #initial-loading .logo-fill-solid {
-      fill: var(--vscode-foreground);
-    }
-    #initial-loading .logo-fill-dim {
-      fill: var(--vscode-foreground);
-      opacity: 0.4;
+    #initial-loading .brand-icon {
+      width: 70px;
+      height: 70px;
+      object-fit: contain;
+      border-radius: 18px;
     }
     #initial-loading .status-text {
       font-size: 13px;
@@ -134,22 +122,9 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
   <title>OpenKei</title>
 </head>
 <body>
-  <!-- Initial loading screen with simplified OpenChamber logo -->
+  <!-- Initial loading screen with OpenKei icon -->
   <div id="initial-loading">
-    <svg class="logo" width="70" height="70" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <!-- Left face -->
-      <path class="logo-fill logo-stroke" d="M50 50 L8.432 26 L8.432 74 L50 98 Z" stroke-width="2" stroke-linejoin="round"/>
-      <!-- Right face -->
-      <path class="logo-fill logo-stroke" d="M50 50 L91.568 26 L91.568 74 L50 98 Z" stroke-width="2" stroke-linejoin="round"/>
-      <!-- Top face (no fill, stroke only) -->
-      <path class="logo-stroke" d="M50 2 L8.432 26 L50 50 L91.568 26 Z" fill="none" stroke-width="2" stroke-linejoin="round"/>
-      
-      <!-- OpenCode logo on top face -->
-      <g class="logo-inner" transform="matrix(0.866, 0.5, -0.866, 0.5, 50, 26) scale(0.75)">
-        <path class="logo-fill-solid" fill-rule="evenodd" clip-rule="evenodd" d="M-16 -20 L16 -20 L16 20 L-16 20 Z M-8 -12 L-8 12 L8 12 L8 -12 Z"/>
-        <path class="logo-fill-dim" d="M-8 -4 L8 -4 L8 12 L-8 12 Z"/>
-      </g>
-    </svg>
+    <img class="brand-icon" src="${appIconUri}" alt="OpenKei logo" />
     <div class="status-text" id="loading-status">
       ${initialStatus === 'connecting' ? 'Starting OpenCode API…' : initialStatus === 'connected' ? 'Initializing…' : 'Connecting…'}
     </div>
@@ -168,6 +143,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       cliAvailable: ${cliAvailable},
       panelType: "${panelType}",
       viewMode: "${viewMode}",
+      brandIcon: "${appIconUri}",
       initialSessionId: ${initialSessionId ? `"${initialSessionId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : 'null'},
     };
     window.__OPENCHAMBER_HOME__ = "${workspaceFolder.replace(/\\/g, '\\\\')}";

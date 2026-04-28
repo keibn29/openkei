@@ -67,8 +67,8 @@ export class SessionEditorPanelProvider {
     );
 
     panel.iconPath = {
-      light: vscode.Uri.joinPath(this._extensionUri, 'assets', 'icon.svg'),
-      dark: vscode.Uri.joinPath(this._extensionUri, 'assets', 'icon-titlebar.svg'),
+      light: vscode.Uri.joinPath(this._extensionUri, 'assets', 'app-icon.png'),
+      dark: vscode.Uri.joinPath(this._extensionUri, 'assets', 'app-icon.png'),
     };
 
     const state: SessionPanelState = {

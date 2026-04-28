@@ -49,8 +49,8 @@ export class AgentManagerPanelProvider {
     );
 
     this._panel.iconPath = {
-      light: vscode.Uri.joinPath(this._extensionUri, 'assets', 'icon.svg'),
-      dark: vscode.Uri.joinPath(this._extensionUri, 'assets', 'icon-titlebar.svg'),
+      light: vscode.Uri.joinPath(this._extensionUri, 'assets', 'app-icon.png'),
+      dark: vscode.Uri.joinPath(this._extensionUri, 'assets', 'app-icon.png'),
     };
 
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);

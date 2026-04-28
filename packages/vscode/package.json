@@ -1,7 +1,7 @@
 {
   "name": "openkei",
   "displayName": "OpenKei",
-  "description": "AI coding assistant powered by OpenCode",
+  "description": "OpenKei VS Code extension for OpenCode",
   "version": "1.0.0",
   "publisher": "keindl29",
   "license": "MIT",
@@ -38,7 +38,7 @@
         {
           "id": "openkei",
           "title": "OpenKei",
-          "icon": "assets/icon.svg"
+          "icon": "assets/app-icon.png"
         }
       ]
     },
@@ -57,8 +57,8 @@
         "category": "OpenKei",
         "title": "Open Sidebar",
         "icon": {
-          "light": "assets/icon.svg",
-          "dark": "assets/icon-titlebar.svg"
+          "light": "assets/app-icon.png",
+          "dark": "assets/app-icon.png"
         }
       },
       {
@@ -93,8 +93,8 @@
         "category": "OpenKei",
         "title": "Open New Session in Editor",
         "icon": {
-          "light": "assets/icon.svg",
-          "dark": "assets/icon-titlebar.svg"
+          "light": "assets/app-icon.png",
+          "dark": "assets/app-icon.png"
         }
       },
       {
