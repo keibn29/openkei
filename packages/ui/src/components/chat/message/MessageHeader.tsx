@@ -3,6 +3,7 @@ import { RiAiAgentLine, RiBrainAi3Line, RiUser3Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { getAgentColor } from '@/lib/agentColors';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
+import { capitalizeLabel } from '@/components/chat/mobileControlsUtils';
 
 interface MessageHeaderProps {
     isUser: boolean;
@@ -65,7 +66,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agent
                                 )}
                             >
                                 <RiAiAgentLine className="h-3 w-3 flex-shrink-0" />
-                                <span className="font-medium">{agentName}</span>
+                                <span className="font-medium">{capitalizeLabel(agentName)}</span>
                             </div>
                         )}
                         {!isUser && variant && (

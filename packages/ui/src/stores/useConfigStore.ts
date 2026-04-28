@@ -13,6 +13,7 @@ import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { updateDesktopSettings } from "@/lib/persistence";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
+import { setAgentColorOverrides } from "@/lib/agentColors";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
@@ -443,6 +444,53 @@ const toDirectoryKey = (directory: string | null | undefined): string => {
 };
 
 const fromDirectoryKey = (key: string): string | null => (key === DIRECTORY_KEY_GLOBAL ? null : key);
+
+type AgentWithConfiguredColor = Agent & {
+    color?: string;
+};
+
+const getAgentConfiguredColor = (agent: Agent): string | undefined => {
+    const color = (agent as AgentWithConfiguredColor).color;
+    return typeof color === 'string' && color.trim().length > 0 ? color.trim() : undefined;
+};
+
+const enrichAgentsWithConfiguredColors = async (agents: Agent[], directoryKey: string): Promise<Agent[]> => {
+    if (agents.length === 0) {
+        return agents;
+    }
+
+    const directory = fromDirectoryKey(directoryKey);
+    const queryParams = directory ? `?directory=${encodeURIComponent(directory)}` : '';
+
+    const enriched = await Promise.all(
+        agents.map(async (agent) => {
+            const existingColor = getAgentConfiguredColor(agent);
+            try {
+                const response = await fetch(`/api/config/agents/${encodeURIComponent(agent.name)}${queryParams}`, {
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        ...(directory ? { 'x-opencode-directory': directory } : {}),
+                    },
+                });
+
+                if (!response.ok) {
+                    return existingColor ? { ...agent, color: existingColor } : agent;
+                }
+
+                const data = await response.json().catch(() => null);
+                const configuredColor = typeof data?.config?.color === 'string' && data.config.color.trim().length > 0
+                    ? data.config.color.trim()
+                    : existingColor;
+
+                return configuredColor ? { ...agent, color: configuredColor } : agent;
+            } catch {
+                return existingColor ? { ...agent, color: existingColor } : agent;
+            }
+        }),
+    );
+
+    return enriched;
+};
 
 const resolveInitialDirectoryKey = (): string => {
     if (typeof window === 'undefined') {
@@ -1244,7 +1292,11 @@ export const useConfigStore = create<ConfigStore>()(
                                 fetchOpenChamberDefaults(),
                             ]);
 
-                            const safeAgents = Array.isArray(agents) ? agents : [];
+                            const safeAgents = await enrichAgentsWithConfiguredColors(
+                                Array.isArray(agents) ? agents : [],
+                                directoryKey,
+                            );
+                            setAgentColorOverrides(safeAgents as AgentWithConfiguredColor[]);
 
                             const providers = get().activeDirectoryKey === directoryKey
                                 ? get().providers

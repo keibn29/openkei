@@ -601,6 +601,19 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
     return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
+  const agentConfigMatch = pathname.match(/^\/api\/config\/agents\/([^/]+)\/config$/);
+  if (agentConfigMatch) {
+    const name = decodeURIComponent(agentConfigMatch[1]);
+    const queryDirectory = url.searchParams.get('directory') || undefined;
+    try {
+      const data = await sendBridgeMessage('api:config/agents', { method: 'GET_CONFIG', name, directory: queryDirectory });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname.startsWith('/api/config/agents/')) {
     const encodedName = pathname.slice('/api/config/agents/'.length);
     const name = decodeURIComponent(encodedName);

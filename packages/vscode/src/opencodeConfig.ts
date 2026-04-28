@@ -777,6 +777,50 @@ export const getAgentSources = (agentName: string, workingDirectory?: string): C
   return sources;
 };
 
+export const getAgentConfig = (agentName: string, workingDirectory?: string): {
+  source: 'md' | 'json' | 'none';
+  scope: AgentScope | null;
+  config: Record<string, unknown>;
+} => {
+  const projectPath = workingDirectory ? getProjectAgentPath(workingDirectory, agentName) : null;
+  const projectExists = projectPath ? fs.existsSync(projectPath) : false;
+
+  const userPath = getUserAgentPath(agentName);
+  const userExists = fs.existsSync(userPath);
+
+  if (projectExists || userExists) {
+    const mdPath = projectExists ? projectPath : userPath;
+    const { frontmatter, body } = parseMdFile(mdPath!);
+
+    return {
+      source: 'md',
+      scope: projectExists ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER,
+      config: {
+        ...frontmatter,
+        ...(typeof body === 'string' && body.length > 0 ? { prompt: body } : {}),
+      },
+    };
+  }
+
+  const layers = readConfigLayers(workingDirectory);
+  const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
+
+  if (jsonSource.exists && jsonSource.section) {
+    const scope = jsonSource.path === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+    return {
+      source: 'json',
+      scope,
+      config: { ...(jsonSource.section as Record<string, unknown>) },
+    };
+  }
+
+  return {
+    source: 'none',
+    scope: null,
+    config: {},
+  };
+};
+
 export const createAgent = (agentName: string, config: Record<string, unknown>, workingDirectory?: string, scope?: AgentScope) => {
   ensureDirs();
 

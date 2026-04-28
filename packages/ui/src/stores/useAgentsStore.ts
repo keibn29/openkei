@@ -15,6 +15,7 @@ import { useCommandsStore } from "@/stores/useCommandsStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
 import { useSkillsCatalogStore } from "@/stores/useSkillsCatalogStore";
 import { useSkillsStore } from "@/stores/useSkillsStore";
+import { setAgentColorOverrides } from "@/lib/agentColors";
 
 // Note: useDirectoryStore cannot be imported at top level to avoid circular dependency
 // useDirectoryStore -> useAgentsStore (for refreshAfterOpenCodeRestart)
@@ -78,6 +79,7 @@ const buildAgentsSignature = (agents: Agent[]): string => {
         extended.scope ?? '',
         extended.group ?? '',
         extended.description ?? '',
+        extended.color ?? '',
         String(extended.hidden === true),
         String(extended.native === true),
       ].join('|');
@@ -109,6 +111,8 @@ export type AgentWithExtras = Agent & {
   scope?: AgentScope;
   /** Subfolder name parsed from file path, e.g. "business", "development" */
   group?: string;
+  /** Optional UI color from opencode.json/frontmatter (`color`). */
+  color?: string;
 };
 
 /** Parse the subfolder group name from an agent file path.
@@ -264,13 +268,18 @@ export const useAgentsStore = create<AgentsStore>()(
                         // Parse subfolder group from file path
                         const mdPath: string | null | undefined = data.sources?.md?.path;
                         const group = parseAgentGroup(mdPath);
+                        const color = typeof data.config?.color === 'string' && data.config.color.trim().length > 0
+                          ? data.config.color.trim()
+                          : undefined;
+
+                        const agentWithExtras = color ? { ...agent, color } : agent;
 
                         if (scope === 'project' || scope === 'user') {
-                          return { ...agent, scope: scope as AgentScope, group };
+                          return { ...agentWithExtras, scope: scope as AgentScope, group };
                         }
 
                         // Explicitly set null scope if not found, to clear stale state
-                        return { ...agent, scope: undefined, group };
+                        return { ...agentWithExtras, scope: undefined, group };
                       }
                     } catch (err) {
                       console.warn(`[AgentsStore] Failed to fetch config for agent ${agent.name}:`, err);
@@ -285,6 +294,7 @@ export const useAgentsStore = create<AgentsStore>()(
                 } else {
                   set({ isLoading: false });
                 }
+                setAgentColorOverrides(agentsWithScope as AgentWithExtras[]);
                 agentsLastLoadedAt.set(cacheKey, Date.now());
                 return true;
               } catch {

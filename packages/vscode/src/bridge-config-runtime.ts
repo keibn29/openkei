@@ -5,6 +5,7 @@ import {
   createCommand,
   deleteAgent,
   deleteCommand,
+  getAgentConfig,
   getAgentSources,
   getCommandSources,
   updateAgent,
@@ -198,6 +199,8 @@ export async function handleConfigBridgeMessage(
 
       if (normalizedMethod === 'GET') {
         const sources = getAgentSources(agentName, workingDirectory);
+        const configInfo = getAgentConfig(agentName, workingDirectory);
+        const color = typeof configInfo.config?.color === 'string' ? configInfo.config.color : undefined;
         const scope = sources.md.exists
           ? sources.md.scope
           : (sources.json.exists ? sources.json.scope : null);
@@ -205,8 +208,13 @@ export async function handleConfigBridgeMessage(
           id,
           type,
           success: true,
-          data: { name: agentName, sources, scope, isBuiltIn: !sources.md.exists && !sources.json.exists },
+          data: { name: agentName, sources, config: color ? { color } : {}, scope, isBuiltIn: !sources.md.exists && !sources.json.exists },
         };
+      }
+
+      if (normalizedMethod === 'GET_CONFIG') {
+        const configInfo = getAgentConfig(agentName, workingDirectory);
+        return { id, type, success: true, data: configInfo };
       }
 
       if (normalizedMethod === 'POST') {

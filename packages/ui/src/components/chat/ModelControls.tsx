@@ -1785,7 +1785,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 onClick={() => handleAgentChange(agent.name)}
                             >
                                 <div className="flex items-center gap-2">
-                                    <div className={cn('h-2.5 w-2.5 rounded-full flex-shrink-0', agentColor.class)} />
+                                    <div className={cn('h-2.5 w-2.5 rounded-full flex-shrink-0 agent-dot', agentColor.class)} />
                                     <span
                                         className="typography-ui-label font-semibold"
                                         style={isSelected ? { color: `var(${agentColor.var})` } : undefined}

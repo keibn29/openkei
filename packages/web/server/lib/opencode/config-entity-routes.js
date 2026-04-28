@@ -51,6 +51,8 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
       const sources = getAgentSources(agentName, directory);
+      const configInfo = getAgentConfig(agentName, directory);
+      const color = typeof configInfo.config?.color === 'string' ? configInfo.config.color : undefined;
 
       const scope = sources.md.exists
         ? sources.md.scope
@@ -59,6 +61,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       res.json({
         name: agentName,
         sources: sources,
+        config: color ? { color } : {},
         scope,
         isBuiltIn: !sources.md.exists && !sources.json.exists
       });
