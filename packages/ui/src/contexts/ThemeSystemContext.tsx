@@ -19,7 +19,6 @@ import {
   DEFAULT_DARK_THEME_ID,
 } from '@/lib/theme/themes';
 import { ThemeSystemContext, type ThemeContextValue } from './theme-system-context';
-import type { VSCodeThemePayload } from '@/lib/theme/vscode/adapter';
 
 type ThemePreferences = {
   themeMode: ThemeMode;
@@ -35,6 +34,7 @@ type ThemeSyncPayload = {
 
 const DEFAULT_LIGHT_ID = DEFAULT_LIGHT_THEME_ID;
 const DEFAULT_DARK_ID = DEFAULT_DARK_THEME_ID;
+const VSCODE_FIXED_THEME_ID = 'dracula-dark';
 
 const getSystemPreference = (): boolean => {
   if (typeof window === 'undefined') {
@@ -210,13 +210,6 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => getSystemPreference());
   const [customThemes, setCustomThemes] = useState<Theme[]>([]);
   const [customThemesLoading, setCustomThemesLoading] = useState(false);
-  const [vscodeTheme, setVSCodeTheme] = useState<Theme | null>(() => {
-    if (typeof window === 'undefined' || !isVSCodeRuntime()) {
-      return null;
-    }
-    const existing = (window as unknown as { __OPENCHAMBER_VSCODE_THEME__?: Theme }).__OPENCHAMBER_VSCODE_THEME__;
-    return existing || null;
-  });
   const isVSCode = useMemo(() => isVSCodeRuntime(), []);
   const isLocalDesktopOrigin = useMemo(() => isDesktopLocalOriginActive(), []);
   const isDesktopShell = useMemo(() => isTauriShell(), []);
@@ -232,16 +225,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       merged.push(theme);
     };
 
-    if (isVSCode && vscodeTheme) {
-      add(vscodeTheme);
-    }
-
     // Custom themes first so they can override built-ins with the same id.
     customThemes.forEach(add);
     themes.forEach(add);
 
     return merged;
-  }, [customThemes, isVSCode, vscodeTheme]);
+  }, [customThemes]);
 
   const getThemeByIdFromAvailable = useCallback(
     (themeId: string): Theme | undefined => availableThemes.find((theme) => theme.metadata.id === themeId),
@@ -262,8 +251,8 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   );
 
   const currentTheme = useMemo(() => {
-    if (isVSCode && vscodeTheme) {
-      return vscodeTheme;
+    if (isVSCode) {
+      return ensureThemeById(VSCODE_FIXED_THEME_ID, 'dark');
     }
     if (preferences.themeMode === 'light') {
       return ensureThemeById(preferences.lightThemeId, 'light');
@@ -274,7 +263,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     return systemPrefersDark
       ? ensureThemeById(preferences.darkThemeId, 'dark')
       : ensureThemeById(preferences.lightThemeId, 'light');
-  }, [ensureThemeById, isVSCode, preferences, systemPrefersDark, vscodeTheme]);
+  }, [ensureThemeById, isVSCode, preferences, systemPrefersDark]);
 
   const reloadCustomThemes = useCallback(async () => {
     if (typeof window === 'undefined' || isVSCode) {
@@ -314,31 +303,6 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   useEffect(() => {
     void reloadCustomThemes();
   }, [reloadCustomThemes]);
-
-  useEffect(() => {
-    if (!isVSCode) {
-      return;
-    }
-
-    const applyVSCodeTheme = (theme: Theme) => {
-      setVSCodeTheme(theme);
-    };
-
-    const handleThemeEvent = (event: Event) => {
-      const detail = (event as CustomEvent<VSCodeThemePayload>).detail;
-      if (detail?.theme) {
-        applyVSCodeTheme(detail.theme);
-      }
-    };
-
-    const existing = (window as unknown as { __OPENCHAMBER_VSCODE_THEME__?: Theme }).__OPENCHAMBER_VSCODE_THEME__;
-    if (existing) {
-      applyVSCodeTheme(existing);
-    }
-
-    window.addEventListener('openchamber:vscode-theme', handleThemeEvent as EventListener);
-    return () => window.removeEventListener('openchamber:vscode-theme', handleThemeEvent as EventListener);
-  }, [isVSCode]);
 
   const updateBrowserChrome = useCallback((theme: Theme) => {
     if (typeof document === 'undefined') {
@@ -559,6 +523,10 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   }, [applyIncomingThemeSync]);
 
   useEffect(() => {
+    if (isVSCode) {
+      return;
+    }
+
     const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
     const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
 
@@ -573,7 +541,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       splashBgDark: darkTheme.colors.surface.background,
       splashFgDark: darkTheme.colors.surface.foreground,
     });
-  }, [currentTheme.metadata.id, currentTheme.metadata.variant, ensureThemeById, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId]);
+  }, [currentTheme.metadata.id, currentTheme.metadata.variant, ensureThemeById, isVSCode, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId]);
 
   useEffect(() => {
     if (!isDesktopShell) {
