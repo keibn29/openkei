@@ -466,7 +466,8 @@ const enrichAgentsWithConfiguredColors = async (agents: Agent[], directoryKey: s
         agents.map(async (agent) => {
             const existingColor = getAgentConfiguredColor(agent);
             try {
-                const response = await fetch(`/api/config/agents/${encodeURIComponent(agent.name)}${queryParams}`, {
+                // Fetch full agent config — includes model, color, and other settings.
+                const response = await fetch(`/api/config/agents/${encodeURIComponent(agent.name)}/config${queryParams}`, {
                     headers: {
                         'Cache-Control': 'no-cache',
                         ...(directory ? { 'x-opencode-directory': directory } : {}),
@@ -478,11 +479,40 @@ const enrichAgentsWithConfiguredColors = async (agents: Agent[], directoryKey: s
                 }
 
                 const data = await response.json().catch(() => null);
-                const configuredColor = typeof data?.config?.color === 'string' && data.config.color.trim().length > 0
-                    ? data.config.color.trim()
+                const config = data?.config;
+                if (!config || typeof config !== 'object') {
+                    return existingColor ? { ...agent, color: existingColor } : agent;
+                }
+
+                // Extract configured color
+                const configuredColor = typeof config.color === 'string' && config.color.trim().length > 0
+                    ? config.color.trim()
                     : existingColor;
 
-                return configuredColor ? { ...agent, color: configuredColor } : agent;
+                // Extract configured model (providerID/modelID) from agent config
+                const cm = config.model;
+                const configuredModel = (
+                    cm && typeof cm === 'object' &&
+                    typeof cm.providerID === 'string' &&
+                    typeof cm.modelID === 'string'
+                ) ? { providerID: cm.providerID, modelID: cm.modelID } : undefined;
+
+                // Extract configured variant from agent config
+                const configuredVariant = typeof config.variant === 'string' && config.variant.trim().length > 0
+                    ? config.variant.trim()
+                    : undefined;
+
+                let result: Agent = agent;
+                if (configuredColor) {
+                    result = { ...result, color: configuredColor };
+                }
+                if (configuredModel) {
+                    result = { ...result, model: configuredModel };
+                }
+                if (configuredVariant) {
+                    result = { ...result, variant: configuredVariant };
+                }
+                return result;
             } catch {
                 return existingColor ? { ...agent, color: existingColor } : agent;
             }
@@ -1476,6 +1506,15 @@ export const useConfigStore = create<ConfigStore>()(
                                 if (validateModel(providerID, modelID)) {
                                     resolvedProviderId = providerID;
                                     resolvedModelId = modelID;
+                                    // Also resolve agent's configured variant if valid for this model
+                                    if (resolvedAgent.variant) {
+                                        const variantProvider = providers.find((p) => p.id === providerID);
+                                        const variantModel = variantProvider?.models.find((m) => m.id === modelID) as { variants?: Record<string, unknown> } | undefined;
+                                        const variants = variantModel?.variants;
+                                        if (variants && Object.prototype.hasOwnProperty.call(variants, resolvedAgent.variant)) {
+                                            resolvedVariant = resolvedAgent.variant;
+                                        }
+                                    }
                                 }
                             }
 
@@ -1603,7 +1642,7 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 setAgent: (agentName: string | undefined) => {
-                    const { agents, providers, settingsDefaultModel, settingsDefaultVariant } = get();
+                    const { agents, providers } = get();
 
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
@@ -1648,107 +1687,65 @@ export const useConfigStore = create<ConfigStore>()(
                         }
                     }
 
-                    if (agentName) {
-                        const { currentSessionId } = useSessionUIStore.getState();
+                    // Apply the selected agent's configured model.
+                    // (Settings default model is for new sessions / startup only
+                    // and is handled in loadProviders / loadAgents — it must not
+                    // override an explicit agent switch.)
+                    const agent = agents.find((candidate) => candidate.name === agentName);
+                    const agentModelSelection = agent?.model;
+                    if (agentModelSelection?.providerID && agentModelSelection?.modelID) {
+                        const { providerID, modelID } = agentModelSelection;
+                        const agentProvider = providers.find((provider) => provider.id === providerID);
+                        const agentModel = agentProvider?.models.find((model) => model.id === modelID);
 
-                        if (currentSessionId) {
-                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
-                            if (existingAgentModel) {
-                                return;
-                            }
-                        }
-
-                        // If settings has a default model, use it instead of agent's preferred
-                        if (settingsDefaultModel) {
-                            const parsed = parseModelString(settingsDefaultModel);
-                            if (parsed) {
-                                const settingsProvider = providers.find((p) => p.id === parsed.providerId);
-                                if (settingsProvider?.models.some((m) => m.id === parsed.modelId)) {
-                                    set((state) => {
-                                        const directoryKey = state.activeDirectoryKey;
-                                        const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
-                                            providers: state.providers,
-                                            agents: state.agents,
-                                            currentProviderId: state.currentProviderId,
-                                            currentModelId: state.currentModelId,
-                                            currentVariant: state.currentVariant,
-                                            currentAgentName: state.currentAgentName,
-                                            selectedProviderId: state.selectedProviderId,
-                                            agentModelSelections: state.agentModelSelections,
-                                            defaultProviders: state.defaultProviders,
-                                        };
-
-                                        let nextVariant: string | undefined;
-                                        if (settingsDefaultVariant) {
-                                            const settingsProvider = providers.find((p) => p.id === parsed.providerId);
-                                            const model = settingsProvider?.models.find((m) => m.id === parsed.modelId) as { variants?: Record<string, unknown> } | undefined;
-                                            const variants = model?.variants;
-                                            if (variants && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
-                                                nextVariant = settingsDefaultVariant;
-                                            }
-                                        }
-
-                                        const nextSnapshot: DirectoryScopedConfig = {
-                                            ...baseSnapshot,
-                                            currentProviderId: parsed.providerId,
-                                            currentModelId: parsed.modelId,
-                                            currentVariant: nextVariant,
-                                        };
-
-                                        return {
-                                            currentProviderId: parsed.providerId,
-                                            currentModelId: parsed.modelId,
-                                            currentVariant: nextVariant,
-                                            directoryScoped: {
-                                                ...state.directoryScoped,
-                                                [directoryKey]: nextSnapshot,
-                                            },
-                                        };
-                                    });
-                                    return;
+                        if (agentModel) {
+                            // Resolve agent's configured variant if valid for this model
+                            let resolvedAgentVariant: string | undefined;
+                            if (agent?.variant) {
+                                const agentModelVariants = (agentModel as { variants?: Record<string, unknown> }).variants;
+                                if (agentModelVariants && Object.prototype.hasOwnProperty.call(agentModelVariants, agent.variant)) {
+                                    resolvedAgentVariant = agent.variant;
                                 }
                             }
-                        }
 
-                        // Fall back to agent's preferred model
-                        const agent = agents.find((candidate) => candidate.name === agentName);
-                        const agentModelSelection = agent?.model;
-                        if (agentModelSelection?.providerID && agentModelSelection?.modelID) {
-                            const { providerID, modelID } = agentModelSelection;
-                            const agentProvider = providers.find((provider) => provider.id === providerID);
-                            const agentModel = agentProvider?.models.find((model) => model.id === modelID);
+                            set((state) => {
+                                const directoryKey = state.activeDirectoryKey;
+                                const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
+                                    providers: state.providers,
+                                    agents: state.agents,
+                                    currentProviderId: state.currentProviderId,
+                                    currentModelId: state.currentModelId,
+                                    currentVariant: state.currentVariant,
+                                    currentAgentName: state.currentAgentName,
+                                    selectedProviderId: state.selectedProviderId,
+                                    agentModelSelections: state.agentModelSelections,
+                                    defaultProviders: state.defaultProviders,
+                                };
 
-                            if (agentModel) {
-                                set((state) => {
-                                    const directoryKey = state.activeDirectoryKey;
-                                    const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
-                                        providers: state.providers,
-                                        agents: state.agents,
-                                        currentProviderId: state.currentProviderId,
-                                        currentModelId: state.currentModelId,
-                                        currentAgentName: state.currentAgentName,
-                                        selectedProviderId: state.selectedProviderId,
-                                        agentModelSelections: state.agentModelSelections,
-                                        defaultProviders: state.defaultProviders,
-                                    };
+                                const nextSnapshot: DirectoryScopedConfig = {
+                                    ...baseSnapshot,
+                                    currentProviderId: providerID,
+                                    currentModelId: modelID,
+                                    currentVariant: resolvedAgentVariant,
+                                    selectedProviderId: providerID,
+                                };
 
-                                    const nextSnapshot: DirectoryScopedConfig = {
-                                        ...baseSnapshot,
-                                        currentProviderId: providerID,
-                                        currentModelId: modelID,
-                                        selectedProviderId: providerID,
-                                    };
-
-                                    return {
-                                        currentProviderId: providerID,
-                                        currentModelId: modelID,
-                                        selectedProviderId: providerID,
-                                        directoryScoped: {
-                                            ...state.directoryScoped,
-                                            [directoryKey]: nextSnapshot,
-                                        },
-                                    };
-                                });
+                                return {
+                                    currentProviderId: providerID,
+                                    currentModelId: modelID,
+                                    currentVariant: resolvedAgentVariant,
+                                    selectedProviderId: providerID,
+                                    directoryScoped: {
+                                        ...state.directoryScoped,
+                                        [directoryKey]: nextSnapshot,
+                                    },
+                                };
+                            });
+                            // Persist resolved model & variant/clear for this session+agent
+                            const { currentSessionId } = useSessionUIStore.getState();
+                            if (currentSessionId && agentName) {
+                                useSelectionStore.getState().saveAgentModelForSession(currentSessionId, agentName, providerID, modelID);
+                                useSelectionStore.getState().saveAgentModelVariantForSession(currentSessionId, agentName, providerID, modelID, resolvedAgentVariant);
                             }
                         }
                     }

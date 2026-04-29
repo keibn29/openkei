@@ -225,12 +225,10 @@ const stripDerived = (source: Record<string, unknown>): Record<string, unknown> 
 let eagerMigrationAttempted = false;
 
 // Read the merged persisted settings: shared file is canonical (synced with
-// Desktop and Web clients), globalState is kept as a migration fallback for
-// users upgrading from the pre-shared-sync era. Disk wins on conflicts.
-//
-// On first read per process, if globalState has keys that are missing on
-// disk, copy them to disk so other clients see them immediately — without
-// waiting for the user to save again.
+// Desktop and Web clients). globalState is a secondary cache — disk wins on
+// conflicts. On first read per process, sync any disk keys that globalState
+// is missing so the cache stays current, but never let stale globalState
+// values re-corrupt disk.
 const readPersistedSettings = (ctx?: BridgeContext): Record<string, unknown> => {
   const fromGlobalState = stripDerived(
     ctx?.context?.globalState.get<Record<string, unknown>>(SETTINGS_KEY) || {},
@@ -239,16 +237,26 @@ const readPersistedSettings = (ctx?: BridgeContext): Record<string, unknown> => 
 
   if (!eagerMigrationAttempted) {
     eagerMigrationAttempted = true;
-    const missingFromDisk: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(fromGlobalState)) {
-      if (!(key in fromDisk)) {
-        missingFromDisk[key] = value;
+    // Sync disk → globalState so the cache stays current.
+    const missingFromGlobalState: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(fromDisk)) {
+      if (!(key in fromGlobalState)) {
+        missingFromGlobalState[key] = value;
       }
     }
-    if (Object.keys(missingFromDisk).length > 0) {
-      // Fire-and-forget; readers already have an in-memory merged view.
-      void writeSharedSettingsToDisk(missingFromDisk);
+    if (Object.keys(missingFromGlobalState).length > 0) {
+      // Fire-and-forget; globalState is a cache, disk is the truth.
+      void ctx?.context?.globalState.update(SETTINGS_KEY, { ...fromGlobalState, ...missingFromGlobalState });
     }
+  }
+
+  // When the shared settings file exists on disk, it is the sole source of
+  // truth.  This prevents stale globalState values (e.g. a defaultModel the
+  // user cleared, but globalState.update didn't flush before reload) from
+  // being resurrected.  Only fall back to globalState when no shared file
+  // exists yet (initial migration from the pre-shared-sync era).
+  if (fs.existsSync(OPENCHAMBER_SHARED_SETTINGS_PATH)) {
+    return fromDisk;
   }
 
   return { ...fromGlobalState, ...fromDisk };

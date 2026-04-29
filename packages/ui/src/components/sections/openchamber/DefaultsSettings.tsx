@@ -100,9 +100,9 @@ export const DefaultsSettings: React.FC = () => {
               ? data.defaultAgent.trim()
               : undefined;
 
-          if (model !== undefined) setDefaultModel(model);
-          if (variant !== undefined) setDefaultVariant(variant);
-          if (agent !== undefined) setDefaultAgent(agent);
+          setDefaultModel(model);
+          setDefaultVariant(variant);
+          setDefaultAgent(agent);
         }
       } catch (error) {
         console.warn('Failed to load defaults settings:', error);
@@ -132,14 +132,6 @@ export const DefaultsSettings: React.FC = () => {
 
       try {
         await updateDesktopSettings({ defaultModel: newValue ?? '', defaultVariant: '' });
-        const response = await fetch('/api/config/settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ defaultModel: newValue }),
-        });
-        if (!response.ok) {
-          console.warn('Failed to save default model to server:', response.status, response.statusText);
-        }
       } catch (error) {
         console.warn('Failed to save default model:', error);
       }

@@ -601,7 +601,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         { label: 'Output', value: formatTokens(currentMetadata?.limit?.output) },
     ];
 
-    const prevAgentNameRef = React.useRef<string | undefined>(undefined);
     const latestLoadedUserChoiceRestoreRef = React.useRef<string | null>(null);
 
     const currentSessionDirectory = currentSessionId ? getDirectoryForSession(currentSessionId) : undefined;
@@ -665,6 +664,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const providerMatches = currentProviderId === providerId;
             const modelMatches = currentModelId === modelId;
             if (providerMatches && modelMatches) {
+                // Even when provider/model already match, persist the
+                // agent→model association so agent switches are durable
+                // across reloads.
+                if (currentSessionId && agentName) {
+                    saveAgentModelForSession(currentSessionId, agentName, providerId, modelId);
+                }
                 return 'applied';
             }
 
@@ -888,53 +893,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         providers,
         sync,
     ]);
-
-    React.useEffect(() => {
-        if (!contextHydrated) {
-            return;
-        }
-
-        const handleAgentSwitch = async () => {
-            try {
-                if (currentAgentName !== prevAgentNameRef.current) {
-                    prevAgentNameRef.current = currentAgentName;
-
-                    if (currentAgentName && currentSessionId) {
-                        await new Promise(resolve => setTimeout(resolve, 50));
-
-                        const persistedChoice = getAgentModelForSession(currentSessionId, currentAgentName);
-
-                        if (persistedChoice) {
-                            const result = tryApplyModelSelection(
-                                persistedChoice.providerId,
-                                persistedChoice.modelId,
-                                currentAgentName,
-                            );
-                            if (result === 'applied' || result === 'provider-missing') {
-                                return;
-                            }
-                        }
-
-                        const agent = agents.find(a => a.name === currentAgentName);
-                        if (agent?.model?.providerID && agent?.model?.modelID) {
-                            const result = tryApplyModelSelection(
-                                agent.model.providerID,
-                                agent.model.modelID,
-                                currentAgentName,
-                            );
-                            if (result === 'provider-missing') {
-                                return;
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('[ModelControls] Agent change error:', error);
-            }
-        };
-
-        handleAgentSwitch();
-    }, [currentAgentName, currentSessionId, getAgentModelForSession, tryApplyModelSelection, agents, contextHydrated]);
 
     React.useEffect(() => {
         if (!contextHydrated || !currentAgentName) {

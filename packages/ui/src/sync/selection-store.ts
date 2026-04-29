@@ -64,19 +64,26 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
     get().sessionAgentModelSelections.get(sessionId)?.get(agentName) ?? null,
 
   saveAgentModelVariantForSession: (sessionId, agentName, providerId, modelId, variant) => {
-    if (!variant) return
     const key = `${providerId}/${modelId}`
     let agentMap = agentModelVariantSelections.get(sessionId)
     if (!agentMap) {
+      if (variant === undefined) return
       agentMap = new Map()
       agentModelVariantSelections.set(sessionId, agentMap)
     }
     let modelMap = agentMap.get(agentName)
     if (!modelMap) {
+      if (variant === undefined) return
       modelMap = new Map()
       agentMap.set(agentName, modelMap)
     }
-    modelMap.set(key, variant)
+    if (variant === undefined) {
+      modelMap.delete(key)
+      if (modelMap.size === 0) agentMap.delete(agentName)
+      if (agentMap.size === 0) agentModelVariantSelections.delete(sessionId)
+    } else {
+      modelMap.set(key, variant)
+    }
   },
 
   getAgentModelVariantForSession: (sessionId, agentName, providerId, modelId) => {
