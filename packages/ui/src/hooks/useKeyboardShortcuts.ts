@@ -10,6 +10,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { showOpenCodeStatus } from '@/lib/openCodeStatus';
 import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { getAllSyncSessions } from '@/sync/sync-refs';
 
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -54,6 +55,11 @@ export const useKeyboardShortcuts = () => {
 
   React.useEffect(() => {
     const combo = (actionId: string) => getEffectiveShortcutCombo(actionId, shortcutOverrides);
+    const isCurrentSubtaskSession = () => {
+      const sessionId = useSessionUIStore.getState().currentSessionId;
+      if (!sessionId) return false;
+      return Boolean(getAllSyncSessions().find((session) => session.id === sessionId)?.parentID);
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (eventMatchesShortcut(e, combo('open_command_palette'))) {
@@ -128,12 +134,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('toggle_sidebar'))) {
         e.preventDefault();
-        const { isMobile, isSessionSwitcherOpen } = useUIStore.getState();
-        if (isMobile) {
-          setSessionSwitcherOpen(!isSessionSwitcherOpen);
-        } else {
-          toggleSidebar();
-        }
+        toggleSidebar();
         return;
       }
 
@@ -214,6 +215,9 @@ export const useKeyboardShortcuts = () => {
 
       // Cmd/Ctrl+Shift+M: Open model selector (same conditions as double-ESC: chat tab, no overlays)
       if (eventMatchesShortcut(e, combo('open_model_selector'))) {
+        if (isCurrentSubtaskSession()) {
+          return;
+        }
         const {
           isSettingsDialogOpen,
           isCommandPaletteOpen,
@@ -244,6 +248,9 @@ export const useKeyboardShortcuts = () => {
 
       // Cmd/Ctrl+Shift+T: Cycle thinking variant (same gating as Shift+M)
       if (eventMatchesShortcut(e, combo('cycle_thinking_variant'))) {
+        if (isCurrentSubtaskSession()) {
+          return;
+        }
         const {
           isSettingsDialogOpen,
           isCommandPaletteOpen,
@@ -291,6 +298,9 @@ export const useKeyboardShortcuts = () => {
         eventMatchesShortcut(e, combo('cycle_favorite_model_forward')) ||
         eventMatchesShortcut(e, combo('cycle_favorite_model_backward'))
       ) {
+        if (isCurrentSubtaskSession()) {
+          return;
+        }
         const {
           isSettingsDialogOpen,
           isCommandPaletteOpen,

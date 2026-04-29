@@ -5,6 +5,7 @@ import type { AgentMentionInfo } from '../types';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
 import { useUIStore } from '@/stores/useUIStore';
 import { RiArrowUpSLine } from '@remixicon/react';
+import { useCurrentSessionIsSubtask } from '@/hooks/useCurrentSessionIsSubtask';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
 
@@ -42,7 +43,10 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const [isTruncated, setIsTruncated] = React.useState(false);
     const userMessageRenderingMode = useUIStore((state) => state.userMessageRenderingMode);
     const normalizedRenderingMode = normalizeUserMessageRenderingMode(userMessageRenderingMode);
+    const isCurrentSessionSubtask = useCurrentSessionIsSubtask();
     const textRef = React.useRef<HTMLDivElement>(null);
+    const shouldForcePlainRendering = isCurrentSessionSubtask;
+    const shouldRenderMarkdown = normalizedRenderingMode === 'markdown' && !shouldForcePlainRendering;
 
     const hasActiveSelectionInElement = React.useCallback((element: HTMLElement): boolean => {
         if (typeof window === 'undefined') {
@@ -63,6 +67,10 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         if (!el) return;
 
         const checkTruncation = () => {
+            if (shouldForcePlainRendering) {
+                setIsTruncated(false);
+                return;
+            }
             if (!isExpanded) {
                 setIsTruncated(el.scrollHeight > el.clientHeight);
             }
@@ -74,11 +82,15 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         resizeObserver.observe(el);
 
         return () => resizeObserver.disconnect();
-    }, [textContent, isExpanded]);
+    }, [isExpanded, shouldForcePlainRendering, textContent]);
 
     const handleClick = React.useCallback(() => {
         const element = textRef.current;
         if (!element) {
+            return;
+        }
+
+        if (shouldForcePlainRendering) {
             return;
         }
 
@@ -89,7 +101,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         if (!isExpanded && isTruncated) {
             setIsExpanded(true);
         }
-    }, [hasActiveSelectionInElement, isExpanded, isTruncated]);
+    }, [hasActiveSelectionInElement, isExpanded, isTruncated, shouldForcePlainRendering]);
 
     const handleCollapse = React.useCallback((event: React.MouseEvent) => {
         event.stopPropagation();
@@ -142,7 +154,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
 
     return (
         <div className="relative" key={part.id || `${messageId}-user-text`}>
-            {isExpanded && (
+            {isExpanded && !shouldForcePlainRendering && (
                 <button
                     type="button"
                     onClick={handleCollapse}
@@ -156,14 +168,14 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 className={cn(
                     "break-words font-sans typography-markdown",
                     isExpanded && "pb-3",
-                    normalizedRenderingMode === 'plain' && 'whitespace-pre-wrap',
-                    !isExpanded && "line-clamp-2",
-                    isTruncated && !isExpanded && "cursor-pointer"
+                    (normalizedRenderingMode === 'plain' || shouldForcePlainRendering) && 'whitespace-pre-wrap',
+                    !shouldForcePlainRendering && !isExpanded && "line-clamp-2",
+                    !shouldForcePlainRendering && isTruncated && !isExpanded && "cursor-pointer"
                 )}
                 ref={textRef}
                 onClick={handleClick}
             >
-                {normalizedRenderingMode === 'markdown' ? (
+                {shouldRenderMarkdown ? (
                     <SimpleMarkdownRenderer 
                         content={processedMarkdownContent} 
                         disableLinkSafety 

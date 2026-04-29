@@ -42,6 +42,8 @@ import { useDurationTickerNow } from './useDurationTicker';
 import { resolveFallbackTaskSessionId } from './resolveFallbackTaskSessionId';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
+import { getAgentColor } from '@/lib/agentColors';
+import { capitalizeLabel } from '@/components/chat/mobileControlsUtils';
 
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: string; time?: { start: number; end?: number } };
 
@@ -2519,6 +2521,18 @@ const ToolPart: React.FC<ToolPartProps> = ({
 
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
+    const taskAgentName = isTaskTool && typeof input?.subagent_type === 'string' && input.subagent_type.trim().length > 0
+        ? input.subagent_type.trim()
+        : null;
+    const taskAgentLabel = taskAgentName ? capitalizeLabel(taskAgentName) : null;
+    const taskToolTitle = taskAgentLabel ? `${displayName} · ${taskAgentLabel}` : displayName;
+    const displayTitleNode = taskAgentName && taskAgentLabel ? (
+        <>
+            <span>{displayName}</span>
+            <span aria-hidden="true"> · </span>
+            <span style={{ color: `var(${getAgentColor(taskAgentName).var})` }}>{taskAgentLabel}</span>
+        </>
+    ) : displayName;
 
     if (!shouldTreatAsFinalized && !isActive && !isTaskTool) {
         return null;
@@ -2572,9 +2586,9 @@ const ToolPart: React.FC<ToolPartProps> = ({
                                 minDurationMs={300}
                                 className="typography-meta font-medium flex-shrink-0"
                                 style={titleStyle}
-                                title={displayName}
+                                title={taskToolTitle}
                             >
-                                {displayName}
+                                {displayTitleNode}
                             </MinDurationShineText>
                             {getMultiFileDescription(metadata, animateTailText, showToolFileIcons)}
                         </>
@@ -2586,9 +2600,9 @@ const ToolPart: React.FC<ToolPartProps> = ({
                                     minDurationMs={300}
                                     className="typography-meta font-medium flex-shrink-0"
                                     style={titleStyle}
-                                    title={displayName}
+                                    title={taskToolTitle}
                                 >
-                                    {displayName}
+                                    {displayTitleNode}
                                 </MinDurationShineText>
                             </div>
                             {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (

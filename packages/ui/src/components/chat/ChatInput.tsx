@@ -73,6 +73,7 @@ import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { extractGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
+import { useCurrentSessionIsSubtask } from '@/hooks/useCurrentSessionIsSubtask';
 
 const MAX_VISIBLE_TEXTAREA_LINES = 8;
 const EMPTY_QUEUE: QueuedMessage[] = [];
@@ -841,6 +842,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         Promise.resolve((useSessionUIStore.getState().sendMessage as (...a: unknown[]) => unknown)(...args)),
     ).current;
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+    const isCurrentSessionSubtask = useCurrentSessionIsSubtask();
     const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const newSessionDraftOpen = Boolean(newSessionDraft?.open);
@@ -911,6 +913,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const isDesktopExpanded = isExpandedInput && !isMobile;
     const chatInputRadius = 'var(--radius-xl)';
+    const composerInteractionDisabled = isCurrentSessionSubtask;
 
     const sendableAttachedFiles = attachedFiles;
 
@@ -1414,9 +1417,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = queuedMessages.length > 0;
-    const canSend = hasContent || hasQueuedMessages;
+    const canSend = !composerInteractionDisabled && (hasContent || hasQueuedMessages);
 
-    const canAbort = sessionPhase !== 'idle';
+    const canAbort = !composerInteractionDisabled && sessionPhase !== 'idle';
 
     // Keep a ref to handleSubmit so callbacks don't depend on it.
     type SubmitOptions = {
@@ -1426,7 +1429,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     // Add message to queue instead of sending
     const handleQueueMessage = React.useCallback(() => {
-        if (!hasContent || !currentSessionId) return;
+        if (composerInteractionDisabled || !hasContent || !currentSessionId) return;
 
         const drafts = consumeDrafts(currentSessionId);
 
@@ -1459,7 +1462,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!isMobile) {
             textareaRef.current?.focus();
         }
-    }, [hasContent, currentSessionId, message, sendableAttachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, consumeDrafts, currentProviderId, currentModelId, currentAgentName, currentVariant]);
+    }, [composerInteractionDisabled, hasContent, currentSessionId, message, sendableAttachedFiles, sanitizeAttachmentsForSend, addToQueue, clearAttachedFiles, isMobile, consumeDrafts, currentProviderId, currentModelId, currentAgentName, currentVariant]);
 
     const handleQueuedMessageEdit = React.useCallback((content: string) => {
         setMessage(content);
@@ -1486,6 +1489,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const handleSubmit = async (options?: SubmitOptions) => {
         const queuedOnly = options?.queuedOnly ?? false;
+
+        if (composerInteractionDisabled) {
+            return;
+        }
 
         if (queuedOnly) {
             if (!hasQueuedMessages || !currentSessionId) return;
@@ -1825,13 +1832,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     // Primary action for send button - respects queue mode setting
     const handlePrimaryAction = React.useCallback(() => {
-        const canQueue = inputMode === 'normal' && hasContent && currentSessionId && sessionPhase !== 'idle';
+        const canQueue = !composerInteractionDisabled && inputMode === 'normal' && hasContent && currentSessionId && sessionPhase !== 'idle';
         if (queueModeEnabled && canQueue) {
             handleQueueMessage();
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, hasContent, currentSessionId, sessionPhase, queueModeEnabled, handleQueueMessage]);
+    }, [composerInteractionDisabled, inputMode, hasContent, currentSessionId, sessionPhase, queueModeEnabled, handleQueueMessage]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // Early return during IME composition to prevent interference with autocomplete.
@@ -1987,7 +1994,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             // Normal mode: Enter sends, Ctrl+Enter queues
             // Note: Queueing only works when there's an existing session (currentSessionId)
             // For new sessions (draft), always send immediately
-            const canQueue = inputMode === 'normal' && hasContent && currentSessionId && sessionPhase !== 'idle';
+            const canQueue = !composerInteractionDisabled && inputMode === 'normal' && hasContent && currentSessionId && sessionPhase !== 'idle';
 
             if (queueModeEnabled) {
                 if (isCtrlEnter || !canQueue) {
@@ -2701,8 +2708,20 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     }, [abortPromptSessionId, currentSessionId, clearAbortPrompt]);
 
     React.useEffect(() => {
-        canAcceptDropRef.current = Boolean(currentSessionId || newSessionDraftOpen);
-    }, [currentSessionId, newSessionDraftOpen]);
+        if (!composerInteractionDisabled) {
+            return;
+        }
+
+        setShowCommandAutocomplete(false);
+        setShowSkillAutocomplete(false);
+        setShowFileMention(false);
+        setMobileControlsOpen(false);
+        setMobileControlsPanel(null);
+    }, [composerInteractionDisabled, setMobileControlsPanel]);
+
+    React.useEffect(() => {
+        canAcceptDropRef.current = Boolean(!composerInteractionDisabled && (currentSessionId || newSessionDraftOpen));
+    }, [composerInteractionDisabled, currentSessionId, newSessionDraftOpen]);
 
     const hasDraggedFiles = React.useCallback((dataTransfer: DataTransfer | null | undefined): boolean => {
         if (!dataTransfer) return false;
@@ -3700,7 +3719,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         inputMode === 'shell'
                             ? 'focus-within:ring-[var(--status-info)]'
                             : 'focus-within:ring-primary/50',
-                        isDragging && "ring-2 ring-primary ring-offset-2"
+                        isDragging && "ring-2 ring-primary ring-offset-2",
+                        composerInteractionDisabled && 'pointer-events-none opacity-60'
                     )}
                     style={{
                         borderRadius: chatInputRadius,
@@ -3863,7 +3883,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     ? t('chat.chatInput.placeholder.shell')
                                     : t('chat.chatInput.placeholder.chat')
                                 : t('chat.chatInput.placeholder.selectSession')}
-                            disabled={!currentSessionId && !newSessionDraftOpen}
+                            disabled={composerInteractionDisabled || (!currentSessionId && !newSessionDraftOpen)}
                             autoCorrect={isMobile ? "on" : "off"}
                             autoCapitalize={isMobile ? "sentences" : "off"}
                             spellCheck={isMobile || inputSpellcheckEnabled}

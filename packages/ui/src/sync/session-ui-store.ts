@@ -377,6 +377,11 @@ const resolveSessionDirectory = (
   return resolveDirectoryKey(target)
 }
 
+const isSubtaskSession = (sessionId: string | null | undefined): boolean => {
+  if (!sessionId) return false
+  return Boolean(getAllSyncSessions().find((session) => session.id === sessionId)?.parentID)
+}
+
 const activateConfigForDirectory = async (directory: string | null | undefined): Promise<void> => {
   await useConfigStore.getState().activateDirectory(normalizePath(directory))
 }
@@ -881,6 +886,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     // ---- Existing session ----
     const currentSessionId = get().currentSessionId
+    if (isSubtaskSession(currentSessionId)) {
+      return
+    }
+
     const sessionAgentSelection = currentSessionId
       ? useSelectionStore.getState().getSessionAgentSelection(currentSessionId)
       : null

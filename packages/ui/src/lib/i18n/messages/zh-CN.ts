@@ -809,7 +809,7 @@ export const dict: Record<I18nKey, string> = {
   'contextUsage.tooltip.usedTokens': '已用 Token：{tokens}',
   'contextUsage.tooltip.contextLimit': '上下文上限：{tokens}',
   'contextUsage.tooltip.outputLimit': '输出上限：{tokens}',
-  'contextUsage.dropdown.summary': '{tokens} ({percent}) - {cost}',
+  'contextUsage.dropdown.summary': '{tokens} ({percent}) · {cost}',
   'contextSidebar.session.untitled': '未命名会话',
   'contextSidebar.empty.openSession': '请先打开会话以查看上下文。',
   'contextSidebar.section.context': '上下文',

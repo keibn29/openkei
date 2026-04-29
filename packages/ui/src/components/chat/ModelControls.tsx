@@ -56,6 +56,7 @@ import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import type { MobileControlsPanel } from './mobileControlsUtils';
 import { useI18n } from '@/lib/i18n';
+import { useCurrentSessionIsSubtask } from '@/hooks/useCurrentSessionIsSubtask';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IconComponent = ComponentType<any>;
@@ -318,6 +319,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const primaryAgents = React.useMemo(() => agents.filter((agent) => agent.mode === 'primary'), [agents]);
 
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+    const isCurrentSessionSubtask = useCurrentSessionIsSubtask();
     const getDirectoryForSession = useSessionUIStore((s) => s.getDirectoryForSession);
     const sync = useSync();
 
@@ -429,6 +431,17 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setMobileModelQuery('');
         }
     }, [activeMobilePanel]);
+
+    React.useEffect(() => {
+        if (!isCurrentSessionSubtask) {
+            return;
+        }
+
+        setModelSelectorOpen(false);
+        setIsAgentSelectorOpen(false);
+        closeMobilePanel();
+        closeMobileTooltip();
+    }, [closeMobilePanel, closeMobileTooltip, isCurrentSessionSubtask, setModelSelectorOpen]);
 
     // Handle model selector close behavior (separate from agent selector)
     const prevModelSelectorOpenRef = React.useRef(isModelSelectorOpen);
@@ -2844,7 +2857,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     return (
         <>
-            <div className={inlineClassName}>
+            <div className={cn(inlineClassName, isCurrentSessionSubtask && 'pointer-events-none select-none opacity-50')} aria-disabled={isCurrentSessionSubtask}>
                 <div
                     className={cn(
                         'flex items-center min-w-0 flex-1 justify-end',
