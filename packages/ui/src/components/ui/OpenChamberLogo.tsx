@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 
@@ -84,6 +84,7 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
   height = 70,
 }) => {
   const { t } = useI18n();
+  const themeContext = useOptionalThemeSystem();
   const vscodeBrandIcon = typeof window !== 'undefined'
     ? (window as unknown as { __VSCODE_CONFIG__?: { brandIcon?: unknown } }).__VSCODE_CONFIG__?.brandIcon
     : null;
@@ -100,8 +101,6 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
     );
   }
 
-  const themeContext = useOptionalThemeSystem();
-
   let isDark = true;
   if (themeContext) {
     isDark = themeContext.currentTheme.metadata.variant !== 'light';
@@ -109,7 +108,7 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
     isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
 
-  const strokeColor = useMemo(() => {
+  const strokeColor = (() => {
     if (themeContext) {
       return themeContext.currentTheme.colors.surface.foreground;
     }
@@ -120,16 +119,14 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
       }
     }
     return isDark ? 'white' : 'black';
-  }, [themeContext, isDark]);
+  })();
 
-  const supportsColorMix = useMemo(() => {
-    if (typeof window === 'undefined' || typeof CSS === 'undefined' || typeof CSS.supports !== 'function') {
-      return false;
-    }
-    return CSS.supports('color', 'color-mix(in srgb, white 50%, transparent)');
-  }, []);
+  const supportsColorMix = typeof window !== 'undefined'
+    && typeof CSS !== 'undefined'
+    && typeof CSS.supports === 'function'
+    && CSS.supports('color', 'color-mix(in srgb, white 50%, transparent)');
 
-  const fillColor = useMemo(() => {
+  const fillColor = (() => {
     if (themeContext) {
       if (supportsColorMix) {
         return `color-mix(in srgb, ${strokeColor} 15%, transparent)`;
@@ -143,9 +140,9 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
       }
     }
     return isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
-  }, [themeContext, supportsColorMix, strokeColor, isDark]);
+  })();
 
-  const cellHighlightColor = useMemo(() => {
+  const cellHighlightColor = (() => {
     if (themeContext) {
       if (supportsColorMix) {
         return `color-mix(in srgb, ${strokeColor} 35%, transparent)`;
@@ -159,7 +156,7 @@ export const OpenChamberLogo: React.FC<OpenChamberLogoProps> = ({
       }
     }
     return isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)';
-  }, [themeContext, supportsColorMix, strokeColor, isDark]);
+  })();
 
   const logoFillColor = strokeColor;
 

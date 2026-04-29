@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-const DEFAULT_WEBVIEW_DEV_SERVER_URL = 'http://localhost:5173';
+const DEFAULT_WEBVIEW_DEV_SERVER_URL = 'http://localhost:2912';
 
 const normalizeUrl = (value: string): string | null => {
   const trimmed = value.trim();

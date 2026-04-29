@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => ({
   envPrefix: ['VITE_'],
   server: {
     host: 'localhost',
-    port: 5173,
+    port: 2912,
     strictPort: true,
     cors: true,
     headers: {
@@ -43,7 +43,7 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       host: 'localhost',
       protocol: 'ws',
-      port: 5173,
+      port: 2912,
     },
   },
   optimizeDeps: {

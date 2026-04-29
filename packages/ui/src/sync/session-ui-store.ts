@@ -159,6 +159,12 @@ export type ViewportAnchor = {
   value: number
 }
 
+type ContextUsageFocusState = {
+  toolId: string
+  parentSessionId: string
+  sessionId: string
+}
+
 export type SessionHistoryMeta = {
   limit: number
   hasMore: boolean
@@ -170,6 +176,7 @@ export type SessionHistoryMeta = {
 
 export type SessionUIState = {
   currentSessionId: string | null
+  contextUsageFocus: ContextUsageFocusState | null
   newSessionDraft: NewSessionDraftState
   abortPromptSessionId: string | null
   abortPromptExpiresAt: number | null
@@ -203,7 +210,9 @@ export type SessionUIState = {
   clearError: () => void
   markSessionAsOpenChamberCreated: (sessionId: string) => void
   isOpenChamberCreatedSession: (sessionId: string) => boolean
-  getContextUsage: (contextLimit: number, outputLimit: number) => SessionContextUsage | null
+  setContextUsageFocus: (focus: ContextUsageFocusState) => void
+  clearContextUsageFocus: (toolId: string) => void
+  getContextUsage: (contextLimit: number, outputLimit: number, sessionIdOverride?: string) => SessionContextUsage | null
   initializeNewOpenChamberSession: (sessionId: string, agents: unknown[]) => void
   setWorktreeMetadata: (sessionId: string, metadata: WorktreeMetadata | null) => void
   overrideNewSessionDraftTarget: (options: Record<string, unknown>) => void
@@ -276,6 +285,56 @@ const DRAFT_TARGET_STORAGE_KEY = "oc.chatInput.lastDraftTarget"
 
 type PersistedDraftTarget = { projectId: string | null; directory: string | null }
 
+type TokenBreakdown = {
+  input?: number
+  output?: number
+  reasoning?: number
+  cache?: {
+    read?: number
+    write?: number
+  }
+}
+
+const sumTokenBreakdown = (breakdown: TokenBreakdown | null | undefined): number => {
+  if (!breakdown || typeof breakdown !== "object") return 0
+  const input = typeof breakdown.input === "number" ? breakdown.input : 0
+  const output = typeof breakdown.output === "number" ? breakdown.output : 0
+  const reasoning = typeof breakdown.reasoning === "number" ? breakdown.reasoning : 0
+  const cacheRead = typeof breakdown.cache?.read === "number" ? breakdown.cache.read : 0
+  const cacheWrite = typeof breakdown.cache?.write === "number" ? breakdown.cache.write : 0
+  return input + output + reasoning + cacheRead + cacheWrite
+}
+
+const getMessageTokenUsage = (message: Message, directory?: string): { totalTokens: number; outputTokens: number } => {
+  const messageTokens = (message as { tokens?: unknown }).tokens
+  const partTokens = messageTokens === undefined
+    ? (getSyncParts(message.id, directory).find((part) => typeof (part as { tokens?: unknown }).tokens !== "undefined") as { tokens?: unknown } | undefined)?.tokens
+    : undefined
+  const tokenSource = messageTokens ?? partTokens
+
+  if (typeof tokenSource === "number") {
+    const totalTokens = Number.isFinite(tokenSource) && tokenSource > 0 ? tokenSource : 0
+    return { totalTokens, outputTokens: 0 }
+  }
+
+  if (!tokenSource || typeof tokenSource !== "object") {
+    return { totalTokens: 0, outputTokens: 0 }
+  }
+
+  const breakdown = tokenSource as TokenBreakdown
+  const outputTokens = typeof breakdown.output === "number" && breakdown.output > 0 ? breakdown.output : 0
+  return {
+    totalTokens: sumTokenBreakdown(breakdown),
+    outputTokens,
+  }
+}
+
+const getMessageCost = (message: Message): number => {
+  if (message.role !== "assistant") return 0
+  const cost = (message as { cost?: unknown }).cost
+  return typeof cost === "number" && Number.isFinite(cost) && cost > 0 ? cost : 0
+}
+
 const readPersistedDraftTarget = (): PersistedDraftTarget | null => {
   try {
     const raw = safeStorage.getItem(DRAFT_TARGET_STORAGE_KEY)
@@ -334,6 +393,7 @@ const DEFAULT_DRAFT: NewSessionDraftState = {
 
 export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   currentSessionId: null,
+  contextUsageFocus: null,
   newSessionDraft: { ...DEFAULT_DRAFT },
   abortPromptSessionId: null,
   abortPromptExpiresAt: null,
@@ -360,7 +420,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const previousSessionId = get().currentSessionId
 
     // Set currentSessionId immediately so the skeleton renders without delay.
-    set({ currentSessionId: id })
+    set({ currentSessionId: id, contextUsageFocus: null })
 
     const directoryState = useDirectoryStore.getState()
 
@@ -466,6 +526,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         targetFolderId: options?.targetFolderId,
       },
       currentSessionId: null,
+      contextUsageFocus: null,
       error: null,
     })
 
@@ -547,40 +608,67 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   isOpenChamberCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
 
-  getContextUsage: (contextLimit: number, outputLimit: number) => {
+  setContextUsageFocus: (focus) => {
+    set((state) => {
+      const currentFocus = state.contextUsageFocus
+      if (
+        currentFocus
+        && currentFocus.toolId === focus.toolId
+        && currentFocus.parentSessionId === focus.parentSessionId
+        && currentFocus.sessionId === focus.sessionId
+      ) {
+        return state
+      }
+      return { contextUsageFocus: focus }
+    })
+  },
+
+  clearContextUsageFocus: (toolId) => {
+    set((state) => {
+      if (state.contextUsageFocus?.toolId !== toolId) {
+        return state
+      }
+      return { contextUsageFocus: null }
+    })
+  },
+
+  getContextUsage: (contextLimit: number, outputLimit: number, sessionIdOverride?: string) => {
     if (get().newSessionDraft?.open) return null
-    const sessionId = get().currentSessionId
+    const sessionId = sessionIdOverride ?? get().currentSessionId
     if (!sessionId) return null
 
-    const messages = getSyncMessages(sessionId)
+    const directory = get().getDirectoryForSession(sessionId) ?? undefined
+    const messages = getSyncMessages(sessionId, directory)
     if (messages.length === 0) return null
 
-    // Find last assistant message with token data
-    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
-    let lastTokens: AssistantTokens | undefined
+    let lastTotalTokens = 0
+    let lastOutputTokens = 0
+    let totalCost = 0
     let lastMessageId: string | undefined
+    for (const message of messages) {
+      totalCost += getMessageCost(message)
+    }
+
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg.role !== "assistant") continue
-      const tokens = (msg as { tokens?: AssistantTokens }).tokens
-      if (!tokens) continue
-      const total = tokens.input + tokens.output + tokens.reasoning + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0)
-      if (total > 0) {
-        lastTokens = tokens
-        lastMessageId = msg.id
+      const message = messages[i]
+      const { totalTokens, outputTokens } = getMessageTokenUsage(message, directory)
+      if (totalTokens > 0) {
+        lastTotalTokens = totalTokens
+        lastOutputTokens = outputTokens
+        lastMessageId = message.id
         break
       }
     }
 
-    if (!lastTokens) return null
+    if (lastTotalTokens <= 0) return null
 
-    const totalTokens = lastTokens.input + lastTokens.output + lastTokens.reasoning + (lastTokens.cache?.read ?? 0) + (lastTokens.cache?.write ?? 0)
     const thresholdLimit = contextLimit > 0 ? contextLimit : 200000
-    const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0
-    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined
+    const percentage = contextLimit > 0 ? Math.round((lastTotalTokens / contextLimit) * 100) : 0
+    const normalizedOutput = outputLimit > 0 ? Math.round((lastOutputTokens / outputLimit) * 100) : undefined
 
     return {
-      totalTokens,
+      totalTokens: lastTotalTokens,
+      totalCost,
       percentage,
       contextLimit: contextLimit || 0,
       outputLimit: outputLimit || undefined,
@@ -689,7 +777,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (sid) {
       const map = new Map(get().pendingChangesBarDismissed);
       map.delete(sid);
-      set({ pendingChangesBarDismissed: map });
+      set({ pendingChangesBarDismissed: map, contextUsageFocus: null });
+    } else {
+      set({ contextUsageFocus: null });
     }
 
     const draft = get().newSessionDraft

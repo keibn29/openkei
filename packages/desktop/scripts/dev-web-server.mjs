@@ -65,9 +65,9 @@ const apiChild = spawn(sidecarPath, ['--port', String(DESKTOP_DEV_PORT)], {
   },
 });
 
-console.log('[desktop] starting Vite HMR server on http://127.0.0.1:5173 ...');
+console.log('[desktop] starting Vite HMR server on http://127.0.0.1:2912 ...');
 
-const webChild = spawn('bun', ['x', 'vite', '--host', '127.0.0.1', '--port', '5173', '--strictPort'], {
+const webChild = spawn('bun', ['x', 'vite', '--host', '127.0.0.1', '--port', '2912', '--strictPort'], {
   cwd: webDir,
   stdio: 'inherit',
   detached: process.platform !== 'win32',

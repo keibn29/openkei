@@ -71,6 +71,7 @@ export interface SessionHistoryMeta {
 
 export interface SessionContextUsage {
     totalTokens: number;
+    totalCost?: number;
     percentage: number;
     contextLimit: number;
     outputLimit?: number;
@@ -315,7 +316,7 @@ export interface SessionStore {
     setWorktreeMetadata: (sessionId: string, metadata: import('@/types/worktree').WorktreeMetadata | null) => void;
     getWorktreeMetadata: (sessionId: string) => import('@/types/worktree').WorktreeMetadata | undefined;
 
-    getContextUsage: (contextLimit: number, outputLimit: number) => SessionContextUsage | null;
+    getContextUsage: (contextLimit: number, outputLimit: number, sessionIdOverride?: string) => SessionContextUsage | null;
 
     updateSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number) => void;
 

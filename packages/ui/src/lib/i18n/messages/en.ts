@@ -808,6 +808,7 @@ export const dict = {
   'contextUsage.tooltip.usedTokens': 'Used tokens: {tokens}',
   'contextUsage.tooltip.contextLimit': 'Context limit: {tokens}',
   'contextUsage.tooltip.outputLimit': 'Output limit: {tokens}',
+  'contextUsage.dropdown.summary': '{tokens} ({percent}) - {cost}',
   'contextSidebar.session.untitled': 'Untitled Session',
   'contextSidebar.empty.openSession': 'Open a session to inspect context.',
   'contextSidebar.section.context': 'Context',

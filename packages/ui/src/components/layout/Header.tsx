@@ -535,6 +535,7 @@ const isSameContextUsage = (
   if (!a || !b) return false;
 
   return a.totalTokens === b.totalTokens
+    && (a.totalCost ?? 0) === (b.totalCost ?? 0)
     && a.percentage === b.percentage
     && a.contextLimit === b.contextLimit
     && (a.outputLimit ?? 0) === (b.outputLimit ?? 0)

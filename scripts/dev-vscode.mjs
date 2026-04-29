@@ -18,7 +18,7 @@ const workspacePath = path.resolve(workspaceArg);
 const resolveDevServerAddress = () => {
   const configured = process.env.OPENCHAMBER_VSCODE_WEBVIEW_URL;
   if (!configured) {
-    return { host: 'localhost', port: 5173 };
+    return { host: 'localhost', port: 2912 };
   }
 
   try {
@@ -28,7 +28,7 @@ const resolveDevServerAddress = () => {
       port: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
     };
   } catch {
-    return { host: 'localhost', port: 5173 };
+    return { host: 'localhost', port: 2912 };
   }
 };
 
@@ -156,7 +156,7 @@ console.log(`[dev:vscode] Waiting for webview dev server at ${devServerHost}:${d
 const ready = await waitForPort(devServerHost, devServerPort, 60000, () => shuttingDown || dev.exitCode !== null || dev.signalCode !== null);
 if (!ready) {
   console.error(`[dev:vscode] Webview dev server did not become ready at ${devServerHost}:${devServerPort}`);
-  console.error('[dev:vscode] Aborting launch. Ensure `packages/vscode` dev webview server starts on port 5173 before opening the extension host.');
+  console.error('[dev:vscode] Aborting launch. Ensure `packages/vscode` dev webview server starts on port 2912 before opening the extension host.');
   await stopChildTree(dev);
   process.exit(1);
 }

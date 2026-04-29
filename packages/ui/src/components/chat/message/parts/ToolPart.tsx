@@ -1811,6 +1811,8 @@ const ToolPart: React.FC<ToolPartProps> = ({
     const showToolFileIcons = useUIStore((s) => s.showToolFileIcons);
     const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+    const setContextUsageFocus = useSessionUIStore((s) => s.setContextUsageFocus);
+    const clearContextUsageFocus = useSessionUIStore((s) => s.clearContextUsageFocus);
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
@@ -1994,6 +1996,31 @@ const ToolPart: React.FC<ToolPartProps> = ({
     );
 
     const taskSessionId = explicitTaskSessionId ?? fallbackTaskSessionId;
+
+    React.useEffect(() => {
+        if (!isTaskTool) {
+            return;
+        }
+
+        const toolId = typeof part.id === 'string' ? part.id : '';
+        if (!toolId) {
+            return;
+        }
+
+        if (isExpanded && currentSessionId && taskSessionId) {
+            setContextUsageFocus({
+                toolId,
+                parentSessionId: currentSessionId,
+                sessionId: taskSessionId,
+            });
+
+            return () => {
+                clearContextUsageFocus(toolId);
+            };
+        }
+
+        clearContextUsageFocus(toolId);
+    }, [clearContextUsageFocus, currentSessionId, isExpanded, isTaskTool, part.id, setContextUsageFocus, taskSessionId]);
 
     const childSessionMessages = useSessionMessageRecords(taskSessionId ?? '', currentDirectory);
     useEnsureSessionMessages(taskSessionId ?? '', currentDirectory);

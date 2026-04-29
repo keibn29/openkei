@@ -809,6 +809,7 @@ export const dict: Record<I18nKey, string> = {
   "contextUsage.tooltip.usedTokens": "Tokens usados: {tokens}",
   "contextUsage.tooltip.contextLimit": "Límite de contexto: {tokens}",
   "contextUsage.tooltip.outputLimit": "Límite de salida: {tokens}",
+  "contextUsage.dropdown.summary": "{tokens} ({percent}) - {cost}",
   "contextSidebar.session.untitled": "Sesión sin título",
   "contextSidebar.empty.openSession": "Abrir una sesión para inspeccionar el contexto.",
   "contextSidebar.section.context": "Contexto",
