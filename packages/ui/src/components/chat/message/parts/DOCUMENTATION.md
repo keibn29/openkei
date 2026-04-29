@@ -25,6 +25,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Controls expandable header title/description/diff stats/timer and expanded output body.
   - If you want to change expandable tool layout, edit here.
 
+- `AssistantTextPart.tsx`
+  - Renders assistant markdown text blocks.
+  - Splits `<planner-plan>...</planner-plan>` blocks out of assistant text and renders them with `PlanCard` while keeping surrounding text in normal markdown flow.
+
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).
   - Used by both `ProgressiveGroup.tsx` and `ToolPart.tsx`.

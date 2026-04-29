@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
+import { PlanCard } from '../../PlanCard';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatScrollManager';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
@@ -8,6 +9,74 @@ import { resolveAssistantDisplayText, shouldRenderAssistantText } from './assist
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string; time?: { start?: number; end?: number } };
+
+type AssistantRenderSegment = {
+    key: string;
+    type: 'markdown' | 'plan';
+    content: string;
+};
+
+const PLANNER_PLAN_OPEN_TAG = '<planner-plan>';
+const PLANNER_PLAN_BLOCK_REGEX = /<planner-plan>([\s\S]*?)<\/planner-plan>/gi;
+
+const normalizePlannerPlanContent = (text: string): string => {
+    return text
+        .replace(/^(?:[ \t]*\r?\n)+/, '')
+        .replace(/(?:\r?\n[ \t]*)+$/, '');
+};
+
+const splitAssistantRenderSegments = (text: string): AssistantRenderSegment[] => {
+    if (!text.toLowerCase().includes(PLANNER_PLAN_OPEN_TAG)) {
+        return [{ key: 'markdown-0', type: 'markdown', content: text }];
+    }
+
+    const segments: AssistantRenderSegment[] = [];
+    let lastIndex = 0;
+    let segmentIndex = 0;
+
+    for (const match of text.matchAll(PLANNER_PLAN_BLOCK_REGEX)) {
+        const matchIndex = match.index ?? -1;
+        const matchText = match[0] ?? '';
+        const planContent = match[1] ?? '';
+
+        if (matchIndex < 0 || matchText.length === 0) {
+            continue;
+        }
+
+        const leadingText = text.slice(lastIndex, matchIndex);
+        if (leadingText.length > 0) {
+            segments.push({
+                key: `markdown-${segmentIndex}`,
+                type: 'markdown',
+                content: leadingText,
+            });
+            segmentIndex += 1;
+        }
+
+        const normalizedPlanContent = normalizePlannerPlanContent(planContent);
+        if (normalizedPlanContent.trim().length > 0) {
+            segments.push({
+                key: `plan-${segmentIndex}`,
+                type: 'plan',
+                content: normalizedPlanContent,
+            });
+            segmentIndex += 1;
+        }
+
+        lastIndex = matchIndex + matchText.length;
+    }
+
+    const trailingText = text.slice(lastIndex);
+    if (trailingText.length > 0) {
+        segments.push({
+            key: `markdown-${segmentIndex}`,
+            type: 'markdown',
+            content: trailingText,
+        });
+    }
+
+    return segments.length > 0 ? segments : [{ key: 'markdown-0', type: 'markdown', content: text }];
+};
 
 interface AssistantTextPartProps {
     part: Part;
@@ -58,6 +127,12 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
 
     const time = partWithText.time;
     const isFinalized = Boolean(time && typeof time.end !== 'undefined');
+    const markdownVariant = part.type === 'reasoning' ? 'reasoning' : 'assistant';
+    const containsPlannerPlanBlock = part.type === 'text' && displayTextContent.toLowerCase().includes(PLANNER_PLAN_OPEN_TAG);
+    const renderSegments = React.useMemo(
+        () => (containsPlannerPlanBlock ? splitAssistantRenderSegments(displayTextContent) : null),
+        [containsPlannerPlanBlock, displayTextContent],
+    );
 
     const isRenderableTextPart = part.type === 'text' || part.type === 'reasoning';
     if (!isRenderableTextPart) {
@@ -76,15 +151,43 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
             className={`group/assistant-text relative break-words ${chatRenderMode === 'live' ? 'my-1' : ''}`}
             key={part.id || `${messageId}-text`}
         >
-            <MarkdownRenderer
-                content={displayTextContent}
-                part={part}
-                messageId={messageId}
-                isAnimated={false}
-                isStreaming={isStreaming}
-                disableStreamAnimation={chatRenderMode === 'sorted'}
-                variant={part.type === 'reasoning' ? 'reasoning' : 'assistant'}
-            />
+            {renderSegments ? renderSegments.map((segment, index) => {
+                if (segment.type === 'plan') {
+                    return (
+                        <PlanCard
+                            key={segment.key}
+                            content={segment.content}
+                        />
+                    );
+                }
+
+                if (segment.content.trim().length === 0) {
+                    return null;
+                }
+
+                return (
+                    <MarkdownRenderer
+                        key={segment.key}
+                        content={segment.content}
+                        part={part}
+                        messageId={`${messageId}-segment-${index}`}
+                        isAnimated={false}
+                        isStreaming={isStreaming}
+                        disableStreamAnimation={chatRenderMode === 'sorted'}
+                        variant={markdownVariant}
+                    />
+                );
+            }) : (
+                <MarkdownRenderer
+                    content={displayTextContent}
+                    part={part}
+                    messageId={messageId}
+                    isAnimated={false}
+                    isStreaming={isStreaming}
+                    disableStreamAnimation={chatRenderMode === 'sorted'}
+                    variant={markdownVariant}
+                />
+            )}
         </div>
     );
 };

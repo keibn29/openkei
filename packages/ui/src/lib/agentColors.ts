@@ -146,12 +146,16 @@ export function setAgentColorOverrides(agents: Array<{ name?: string; color?: un
       return;
     }
 
+    // Always register a deterministic fallback so agents without an explicit
+    // OpenCode color still render with a stable pseudo-random color across
+    // all sessions.
+    const registered = registerAgentColor(agent.name);
+
     const value = normalizeAgentColor(agent.color);
     if (!value) {
       return;
     }
 
-    const registered = registerAgentColor(agent.name);
     agentColorOverrides.set(agent.name, {
       ...registered,
       value,
