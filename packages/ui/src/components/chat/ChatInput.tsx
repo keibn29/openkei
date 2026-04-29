@@ -406,7 +406,7 @@ const PermissionAutoAcceptButton = React.memo(function PermissionAutoAcceptButto
             className={cn(
                 footerIconButtonClass,
                 'rounded-md hover:bg-transparent',
-                !permissionScopeSessionId && 'opacity-30',
+                !permissionScopeSessionId && !permissionAutoAcceptEnabled && 'opacity-30',
             )}
             onMouseDown={(event) => {
                 event.preventDefault();
@@ -1418,6 +1418,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = queuedMessages.length > 0;
     const canSend = !composerInteractionDisabled && (hasContent || hasQueuedMessages);
+    const draftPermissionAutoAcceptEnabled = newSessionDraftOpen && !currentSessionId;
 
     const canAbort = !composerInteractionDisabled && sessionPhase !== 'idle';
 
@@ -1932,7 +1933,23 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return;
         }
 
-        if (e.key === 'Tab' && !showCommandAutocomplete && !showFileMention) {
+        if (
+            isVSCodeRuntime()
+            && e.key === 'Tab'
+            && e.shiftKey
+            && !e.altKey
+            && !e.metaKey
+            && !e.ctrlKey
+            && !showCommandAutocomplete
+            && !showFileMention
+            && !showSkillAutocomplete
+        ) {
+            e.preventDefault();
+            handleCycleAgent();
+            return;
+        }
+
+        if (!isVSCodeRuntime() && e.key === 'Tab' && !showCommandAutocomplete && !showFileMention) {
             e.preventDefault();
             handleCycleAgent();
             return;
@@ -2171,6 +2188,20 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             saveSessionAgentSelection(currentSessionId, nextAgent.name);
         }
     }, [primaryAgents, currentAgentName, currentSessionId, setAgent, saveSessionAgentSelection]);
+
+    React.useEffect(() => {
+        const handleCyclePrimaryAgentEvent = () => {
+            if (composerInteractionDisabled) {
+                return;
+            }
+            handleCycleAgent();
+        };
+
+        window.addEventListener('openchamber:cycle-primary-agent', handleCyclePrimaryAgentEvent);
+        return () => {
+            window.removeEventListener('openchamber:cycle-primary-agent', handleCyclePrimaryAgentEvent);
+        };
+    }, [composerInteractionDisabled, handleCycleAgent]);
 
     const adjustTextareaHeight = React.useCallback((options?: { allowShrink?: boolean }) => {
         const textarea = textareaRef.current;
@@ -2943,21 +2974,18 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return;
         }
 
-        const files = collectDroppedFiles(e.dataTransfer);
-
-        if (files.length === 0 && isVSCodeRuntime()) {
-            const droppedUris = collectDroppedFileUris(e.dataTransfer);
-            if (droppedUris.length > 0) {
-                pendingDroppedAbsolutePathsRef.current = droppedUris
-                    .map((entry) => normalizeDroppedPath(entry))
-                    .map((entry) => entry.trim())
-                    .filter((entry) => entry.length > 0);
-                addVSCodeDroppedUrisAsMentions(droppedUris);
-            } else {
-                clearDropTextSuppression();
-            }
+        const droppedUris = collectDroppedFileUris(e.dataTransfer);
+        if (droppedUris.length > 0) {
+            pendingDroppedAbsolutePathsRef.current = droppedUris
+                .map((entry) => normalizeDroppedPath(entry))
+                .map((entry) => entry.trim())
+                .filter((entry) => entry.length > 0);
+            addVSCodeDroppedUrisAsMentions(droppedUris);
+            clearDropTextSuppression();
             return;
         }
+
+        const files = collectDroppedFiles(e.dataTransfer);
 
         if (files.length > 0) {
             for (const file of files) {
@@ -3452,6 +3480,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const footerIconButtonClass = cn(iconButtonBaseClass, buttonSizeClass);
     const permissionScopeSessionId = currentSessionId ?? currentManagementSessionId;
     const permissionAutoAcceptEnabled = usePermissionStore((state) => {
+        if (draftPermissionAutoAcceptEnabled) {
+            return true;
+        }
         if (!permissionScopeSessionId) {
             return false;
         }
@@ -3459,6 +3490,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     });
 
     const handlePermissionAutoAcceptToggle = React.useCallback(() => {
+        if (draftPermissionAutoAcceptEnabled) {
+            return;
+        }
         if (!permissionScopeSessionId) {
             toast.error(t('chat.chatInput.toast.openSessionFirst'));
             return;
@@ -3468,7 +3502,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         setSessionAutoAccept(permissionScopeSessionId, nextEnabled).catch(() => {
             toast.error(t('chat.chatInput.toast.togglePermissionAutoAcceptFailed'));
         });
-    }, [permissionAutoAcceptEnabled, permissionScopeSessionId, setSessionAutoAccept, t]);
+    }, [draftPermissionAutoAcceptEnabled, permissionAutoAcceptEnabled, permissionScopeSessionId, setSessionAutoAccept, t]);
 
     React.useEffect(() => {
         const pendingAbortBanner = Boolean(abortPromptSessionId) && abortPromptSessionId === currentSessionId;

@@ -11,6 +11,7 @@ import type { ChildStoreManager } from "./child-store"
 import { opencodeClient } from "@/lib/opencode/client"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
+import { usePermissionStore } from "@/stores/permissionStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 
@@ -187,6 +188,7 @@ export async function createSession(
       useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
       useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
       useGlobalSessionsStore.getState().upsertSession(session)
+      await usePermissionStore.getState().setSessionAutoAccept(session.id, true)
       return session
   } catch (error) {
     console.error("[session-actions] createSession failed", error)

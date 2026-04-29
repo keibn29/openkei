@@ -975,7 +975,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             <div
                 className={cn(
                     'group w-full',
-                    isUser ? (isMobile ? 'pt-1.5' : 'pt-4') : assistantTopPaddingClass,
+                    isUser ? (isMobile ? 'pt-[0.1875rem]' : 'pt-2') : assistantTopPaddingClass,
                     isUser ? 'pb-0' : isFollowedByAssistant ? 'pb-0' : 'pb-8'
                 )}
                 id={`message-${message.info.id}`}
@@ -999,7 +999,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 borderRadius: userMessageRadius,
                                                 borderBottomRightRadius: 'var(--radius-sm)',
                                             }}
-                                            className="px-4 py-2.5 shadow-none border border-primary/5"
+                                            className="px-3 py-[3px] shadow-none border border-primary/5"
                                         >
                                             <MessageBody
                                                 messageId={message.info.id}

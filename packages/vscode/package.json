@@ -2,7 +2,7 @@
   "name": "openkei",
   "displayName": "OpenKei",
   "description": "OpenKei VS Code extension for OpenCode",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "keindl29",
   "license": "MIT",
   "repository": {
@@ -33,6 +33,7 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "onCommand:openkei.openSidebar",
+    "onCommand:openkei.cyclePrimaryAgent",
     "onCommand:openkei.attachExplorerToChat",
     "onView:openkei.chatView"
   ],
@@ -138,6 +139,11 @@
         "command": "openkei.attachExplorerToChat",
         "category": "OpenKei",
         "title": "Attach to OpenKei Chat"
+      },
+      {
+        "command": "openkei.cyclePrimaryAgent",
+        "category": "OpenKei",
+        "title": "Cycle Primary Agent"
       }
     ],
     "submenus": [
@@ -206,6 +212,11 @@
         "key": "ctrl+l",
         "mac": "cmd+l",
         "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "openkei.cyclePrimaryAgent",
+        "key": "shift+tab",
+        "when": "view.openkei.chatView.visible"
       }
     ],
     "configuration": {

@@ -413,6 +413,12 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('openkei.cyclePrimaryAgent', () => {
+      chatViewProvider?.cyclePrimaryAgent();
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('openkei.showOpenCodeStatus', async () => {
       const config = vscode.workspace.getConfiguration('openkei');
       const configuredApiUrl = (config.get<string>('apiUrl') || '').trim();
