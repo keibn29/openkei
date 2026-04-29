@@ -49,27 +49,6 @@ Select code in the editor, right-click, and use the **OpenKei** submenu:
 - VS Code 1.85+
 - [OpenCode CLI](https://opencode.ai) installed and available in PATH, or configured via `openkei.opencodeBinary`
 
-## Development
-
-```bash
-bun install
-bun run vscode:dev
-```
-
-Optional overrides:
-
-```bash
-OPENCHAMBER_VSCODE_BIN=cursor bun run vscode:dev
-OPENCHAMBER_VSCODE_DEV_WORKSPACE=/path/to/workspace bun run vscode:dev
-bun run vscode:dev /path/to/workspace
-```
-
-To package locally:
-
-```bash
-bun run --cwd packages/vscode build
-cd packages/vscode && bunx vsce package --no-dependencies
-```
 
 ## License
 
