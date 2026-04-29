@@ -223,8 +223,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     directoryStatus,
     currentSessionId,
     pinnedSessionIds,
-    expandedParents,
-    hasSessionSearchQuery,
     normalizedSessionSearchQuery,
     notifyOnSubtasks,
     editingId,
@@ -320,9 +318,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isMissingDirectory = directoryState === 'missing';
   const isActive = currentSessionId === session.id;
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
-  const hasChildren = node.children.length > 0;
+  const hasSubtaskChildren = node.children.length > 0;
+  const hasChildren = false;
   const isPinnedSession = pinnedSessionIds.has(session.id);
-  const isExpanded = hasSessionSearchQuery ? true : expandedParents.has(session.id);
+  const isExpanded = false;
   const isSubtaskSession = Boolean((resolvedSession as Session & { parentID?: string | null }).parentID);
   const unseenCount = useSessionUnseenCount(session.id);
   const needsAttention = unseenCount > 0 && (!isSubtaskSession || notifyOnSubtasks);
@@ -414,13 +413,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     showSkippedSubtasksWarning(skippedSubtaskCount);
   }, [collectChildExports, directoryStore, node.children, resolvedSession.title, session.id, sessionDirectory, showSkippedSubtasksWarning, sync, t]);
   const handleExportSession = React.useCallback(async () => {
-    if (node.children.length > 0) {
+    if (hasSubtaskChildren) {
       setExportIncludeSubtasks(true);
       setExportDialogOpen(true);
       return;
     }
     await doExportSession(false);
-  }, [doExportSession, node.children.length]);
+  }, [doExportSession, hasSubtaskChildren]);
 
   if (editingId === session.id) {
     return (

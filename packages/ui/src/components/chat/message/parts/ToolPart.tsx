@@ -12,7 +12,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useDirectorySync, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
+import { useDirectorySync, useSessionDirectory, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
 import { getSyncChildStores } from '@/sync/sync-refs';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionActivity } from '@/hooks/useSessionActivity';
@@ -48,6 +48,7 @@ import { capitalizeLabel } from '@/components/chat/mobileControlsUtils';
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: string; time?: { start: number; end?: number } };
 
 interface ToolPartProps {
+    sessionId?: string;
     part: ToolPartType;
     isExpanded: boolean;
     onToggle: (toolId: string) => void;
@@ -1055,7 +1056,10 @@ const TaskToolSummary: React.FC<{
     isActive?: boolean;
 }> = ({ entries, isExpanded, isMobile, output, sessionId, onShowPopup, input, animateTailText = true, isActive = false }) => {
     const { t } = useI18n();
+    const openSubtaskSession = useSessionUIStore((state) => state.openSubtaskSession);
     const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
+    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+    const parentSessionDirectory = useSessionDirectory(currentSessionId);
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
     const displayEntries = entries;
 
@@ -1068,7 +1072,12 @@ const TaskToolSummary: React.FC<{
     const handleOpenSession = (event: React.MouseEvent) => {
         event.stopPropagation();
         if (sessionId) {
-            setCurrentSession(sessionId);
+            if (currentSessionId) {
+                openSubtaskSession(sessionId, currentSessionId, parentSessionDirectory ?? null);
+                return;
+            }
+
+            setCurrentSession(sessionId, parentSessionDirectory ?? null);
         }
     };
 

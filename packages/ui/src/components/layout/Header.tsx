@@ -23,7 +23,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { formatSessionWorktreeBadge } from '@/sync/session-worktree-contract';
-import { useAllLiveSessions, useSession, useSessionMessagesResolved } from '@/sync/sync-context';
+import { useAllLiveSessions, useSession, useSessionMessageRecords } from '@/sync/sync-context';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
@@ -66,6 +66,7 @@ import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag } from '@/lib/desktop';
 import { desktopHostsGet, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
 import { resolveSessionDiffStats } from '@/components/session/sidebar/utils';
+import { resolveDisplayContextUsage } from '@/lib/contextUsage';
 import { useI18n } from '@/lib/i18n';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 
@@ -525,25 +526,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
     </DropdownMenu>
   );
 });
-
-
-const isSameContextUsage = (
-  a: SessionContextUsage | null,
-  b: SessionContextUsage | null,
-): boolean => {
-  if (a === b) return true;
-  if (!a || !b) return false;
-
-  return a.totalTokens === b.totalTokens
-    && (a.totalCost ?? 0) === (b.totalCost ?? 0)
-    && a.percentage === b.percentage
-    && a.contextLimit === b.contextLimit
-    && (a.outputLimit ?? 0) === (b.outputLimit ?? 0)
-    && (a.normalizedOutput ?? 0) === (b.normalizedOutput ?? 0)
-    && a.thresholdLimit === b.thresholdLimit
-    && (a.lastMessageId ?? '') === (b.lastMessageId ?? '');
-};
-
 const formatCompactHeaderLabel = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -652,7 +634,6 @@ export const Header: React.FC<HeaderProps> = ({
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const isNewSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
   const currentSyncedSession = useSession(currentSessionId ?? null);
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const liveSessions = useAllLiveSessions();
@@ -744,25 +725,18 @@ export const Header: React.FC<HeaderProps> = ({
     : null;
   const contextLimit = (limit && typeof limit.context === 'number' ? limit.context : 0);
   const outputLimit = (limit && typeof limit.output === 'number' ? limit.output : 0);
-  const contextUsage = getContextUsage(contextLimit, outputLimit);
-  const [stableDesktopContextUsage, setStableDesktopContextUsage] = React.useState<SessionContextUsage | null>(null);
-  const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
-
-  useEffect(() => {
-    if (!currentSessionId) {
-      setStableDesktopContextUsage((prev) => (prev === null ? prev : null));
-      return;
-    }
-
-    if (contextUsage && contextUsage.totalTokens > 0) {
-      setStableDesktopContextUsage((prev) => (isSameContextUsage(prev, contextUsage) ? prev : contextUsage));
-      return;
-    }
-
-    if (isContextUsageResolvedForSession) {
-      setStableDesktopContextUsage((prev) => (prev === null ? prev : null));
-    }
-  }, [contextUsage, currentSessionId, isContextUsageResolvedForSession]);
+  const currentSessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '');
+  const contextUsage = React.useMemo(
+    () => {
+      void currentSessionMessageRecords;
+      return getContextUsage(contextLimit, outputLimit);
+    },
+    [contextLimit, currentSessionMessageRecords, getContextUsage, outputLimit],
+  );
+  const desktopHeaderContextUsage = React.useMemo<SessionContextUsage | null>(
+    () => resolveDisplayContextUsage(currentSessionId, contextUsage, contextLimit, outputLimit),
+    [contextLimit, contextUsage, currentSessionId, outputLimit],
+  );
 
   const isSessionSwitcherOpen = useUIStore((state) => state.isSessionSwitcherOpen);
   const githubAvatarUrl = githubAuthStatus?.connected ? (githubAuthStatus.user?.avatarUrl ?? null) : null;
@@ -794,9 +768,9 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return isSessionSwitcherOpen;
   }, [isMobile, isSessionSwitcherOpen, isSidebarOpen, leftDrawerOpen, onToggleLeftDrawer]);
-  const showDesktopHeaderContextUsage = !isVSCode && activeMainTab === 'chat' && !!stableDesktopContextUsage && stableDesktopContextUsage.totalTokens > 0;
-  const desktopHeaderDisplayPercentage = stableDesktopContextUsage && stableDesktopContextUsage.contextLimit > 0
-    ? Math.min(999, (stableDesktopContextUsage.totalTokens / stableDesktopContextUsage.contextLimit) * 100)
+  const showDesktopHeaderContextUsage = !isVSCode && activeMainTab === 'chat' && !!desktopHeaderContextUsage;
+  const desktopHeaderDisplayPercentage = desktopHeaderContextUsage && desktopHeaderContextUsage.contextLimit > 0
+    ? Math.min(999, (desktopHeaderContextUsage.totalTokens / desktopHeaderContextUsage.contextLimit) * 100)
     : 0;
 
   const refreshCurrentInstanceLabel = React.useCallback(async () => {
@@ -1803,13 +1777,13 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex-1" />
 
         <div className="flex shrink-0 items-center gap-1">
-          {showDesktopHeaderContextUsage && stableDesktopContextUsage ? (
+          {showDesktopHeaderContextUsage && desktopHeaderContextUsage ? (
             <ContextUsageDisplay
-              totalTokens={stableDesktopContextUsage.totalTokens}
+              totalTokens={desktopHeaderContextUsage.totalTokens}
               percentage={desktopHeaderDisplayPercentage}
-              colorPercentage={stableDesktopContextUsage.percentage}
-              contextLimit={stableDesktopContextUsage.contextLimit}
-              outputLimit={stableDesktopContextUsage.outputLimit ?? 0}
+              colorPercentage={desktopHeaderContextUsage.percentage}
+              contextLimit={desktopHeaderContextUsage.contextLimit}
+              outputLimit={desktopHeaderContextUsage.outputLimit ?? 0}
               size="compact"
               hideIcon
               showPercentIcon

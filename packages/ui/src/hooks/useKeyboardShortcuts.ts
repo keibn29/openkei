@@ -56,8 +56,11 @@ export const useKeyboardShortcuts = () => {
   React.useEffect(() => {
     const combo = (actionId: string) => getEffectiveShortcutCombo(actionId, shortcutOverrides);
     const isCurrentSubtaskSession = () => {
-      const sessionId = useSessionUIStore.getState().currentSessionId;
+      const { currentSessionId: sessionId, subtaskNavigationHint } = useSessionUIStore.getState();
       if (!sessionId) return false;
+      if (subtaskNavigationHint?.sessionId === sessionId) {
+        return true;
+      }
       return Boolean(getAllSyncSessions().find((session) => session.id === sessionId)?.parentID);
     };
 

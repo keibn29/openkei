@@ -165,6 +165,12 @@ type ContextUsageFocusState = {
   sessionId: string
 }
 
+type SubtaskNavigationHint = {
+  sessionId: string
+  parentSessionId: string
+  parentDirectory: string | null
+}
+
 export type SessionHistoryMeta = {
   limit: number
   hasMore: boolean
@@ -177,6 +183,7 @@ export type SessionHistoryMeta = {
 export type SessionUIState = {
   currentSessionId: string | null
   contextUsageFocus: ContextUsageFocusState | null
+  subtaskNavigationHint: SubtaskNavigationHint | null
   newSessionDraft: NewSessionDraftState
   abortPromptSessionId: string | null
   abortPromptExpiresAt: number | null
@@ -200,6 +207,8 @@ export type SessionUIState = {
 
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null) => void
+  setSubtaskNavigationHint: (hint: SubtaskNavigationHint | null) => void
+  openSubtaskSession: (sessionId: string, parentSessionId: string, parentDirectory?: string | null) => void
   openNewSessionDraft: (options?: Partial<NewSessionDraftState>) => void
   closeNewSessionDraft: () => void
   setNewSessionDraftTarget: (target: { projectId?: string | null; selectedProjectId?: string | null; directoryOverride?: string | null }, options?: { force?: boolean }) => void
@@ -379,7 +388,30 @@ const resolveSessionDirectory = (
 
 const isSubtaskSession = (sessionId: string | null | undefined): boolean => {
   if (!sessionId) return false
+  const hint = useSessionUIStore.getState().subtaskNavigationHint
+  if (hint?.sessionId === sessionId) return true
   return Boolean(getAllSyncSessions().find((session) => session.id === sessionId)?.parentID)
+}
+
+const normalizeSubtaskNavigationHint = (hint: SubtaskNavigationHint | null | undefined): SubtaskNavigationHint | null => {
+  if (!hint) return null
+  const sessionId = typeof hint.sessionId === "string" ? hint.sessionId.trim() : ""
+  const parentSessionId = typeof hint.parentSessionId === "string" ? hint.parentSessionId.trim() : ""
+  if (!sessionId || !parentSessionId) return null
+  return {
+    sessionId,
+    parentSessionId,
+    parentDirectory: normalizePath(hint.parentDirectory),
+  }
+}
+
+const areSubtaskNavigationHintsEqual = (
+  left: SubtaskNavigationHint | null,
+  right: SubtaskNavigationHint | null,
+): boolean => {
+  return left?.sessionId === right?.sessionId
+    && left?.parentSessionId === right?.parentSessionId
+    && left?.parentDirectory === right?.parentDirectory
 }
 
 const activateConfigForDirectory = async (directory: string | null | undefined): Promise<void> => {
@@ -399,6 +431,7 @@ const DEFAULT_DRAFT: NewSessionDraftState = {
 export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   currentSessionId: null,
   contextUsageFocus: null,
+  subtaskNavigationHint: null,
   newSessionDraft: { ...DEFAULT_DRAFT },
   abortPromptSessionId: null,
   abortPromptExpiresAt: null,
@@ -423,9 +456,17 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     }
 
     const previousSessionId = get().currentSessionId
+    const activeSubtaskNavigationHint = get().subtaskNavigationHint
+    const nextSubtaskNavigationHint = activeSubtaskNavigationHint && id && activeSubtaskNavigationHint.sessionId === id
+      ? activeSubtaskNavigationHint
+      : null
 
     // Set currentSessionId immediately so the skeleton renders without delay.
-    set({ currentSessionId: id, contextUsageFocus: null })
+    set({
+      currentSessionId: id,
+      contextUsageFocus: null,
+      subtaskNavigationHint: nextSubtaskNavigationHint,
+    })
 
     const directoryState = useDirectoryStore.getState()
 
@@ -465,6 +506,30 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       markSessionViewed(id)
       setActiveSession(resolvedDir ?? "", id)
     }
+  },
+
+  setSubtaskNavigationHint: (hint) => set((state) => {
+    const nextHint = normalizeSubtaskNavigationHint(hint)
+    if (areSubtaskNavigationHintsEqual(state.subtaskNavigationHint, nextHint)) {
+      return state
+    }
+    return { subtaskNavigationHint: nextHint }
+  }),
+
+  openSubtaskSession: (sessionId, parentSessionId, parentDirectory) => {
+    const hint = normalizeSubtaskNavigationHint({
+      sessionId,
+      parentSessionId,
+      parentDirectory: parentDirectory ?? null,
+    })
+
+    if (!hint) {
+      get().setCurrentSession(sessionId, parentDirectory ?? null)
+      return
+    }
+
+    set({ subtaskNavigationHint: hint })
+    get().setCurrentSession(hint.sessionId, hint.parentDirectory)
   },
 
   // ---------------------------------------------------------------------------

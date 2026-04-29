@@ -151,6 +151,10 @@ export function SessionGroupSection(props: Props): React.ReactNode {
     return compareSessionsByPinnedAndTime(a.session, b.session, pinnedSessionIds);
   }, [pinnedSessionIds, sessionOrderIndex]);
 
+  const isVisibleSessionListNode = React.useCallback((node: SessionNode): boolean => {
+    return !(node.session as Session & { parentID?: string | null }).parentID;
+  }, []);
+
   const searchData = hasSessionSearchQuery ? groupSearchDataByGroup.get(group) : null;
   const displayMode = useSessionDisplayStore((state) => state.displayMode);
   const isMinimalMode = displayMode === 'minimal';
@@ -187,10 +191,10 @@ export function SessionGroupSection(props: Props): React.ReactNode {
   const allFoldersForGroupBase = React.useMemo(() => scopeFolders.map((folder) => {
     const nodes = folder.sessionIds
       .map((sid) => nodeBySessionId.get(sid))
-      .filter((n): n is SessionNode => Boolean(n))
+      .filter((n): n is SessionNode => n !== undefined && isVisibleSessionListNode(n))
       .sort(compareSessionNodes);
     return { folder, nodes };
-  }), [scopeFolders, nodeBySessionId, compareSessionNodes]);
+  }), [scopeFolders, nodeBySessionId, compareSessionNodes, isVisibleSessionListNode]);
 
   const allFoldersForGroup = React.useMemo(() => {
     const folderMapById = new Map(allFoldersForGroupBase.map((entry) => [entry.folder.id, entry]));

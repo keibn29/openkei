@@ -46,12 +46,7 @@ export const useSessionGrouping = (args: Args) => {
           return [node];
         }
 
-        const filteredChildren = filterSessionNodesForSearch(node.children, query);
-        if (filteredChildren.length === 0) {
-          return [];
-        }
-
-        return [{ ...node, children: filteredChildren }];
+        return [];
       });
     },
     [buildSessionSearchText],

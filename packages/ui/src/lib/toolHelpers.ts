@@ -102,7 +102,7 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
   },
 
   task: {
-    displayName: 'Agent Task',
+    displayName: 'Subagent Task',
     category: 'ai',
     outputLanguage: 'markdown',
     inputFields: [

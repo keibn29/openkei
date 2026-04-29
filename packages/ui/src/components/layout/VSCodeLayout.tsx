@@ -4,7 +4,7 @@ import { SessionSidebar } from '@/components/session/SessionSidebar';
 import { ChatView } from '@/components/views';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
-import { useSessions, useDirectorySync } from '@/sync/sync-context';
+import { useSessions, useDirectorySync, useSessionMessageRecords } from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { McpDropdown } from '@/components/mcp/McpDropdown';
 import {
@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
+import { resolveDisplayContextUsage } from '@/lib/contextUsage';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line } from '@remixicon/react';
 
@@ -589,9 +590,20 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   );
   const contextLimit = sessionLimits?.context ?? fallbackLimits.context;
   const outputLimit = sessionLimits?.output ?? fallbackLimits.output;
-  const contextUsage = getContextUsage(contextLimit, outputLimit, contextUsageSessionId ?? undefined);
-  const displayPercentage = contextUsage && contextUsage.contextLimit > 0
-    ? (contextUsage.totalTokens / contextUsage.contextLimit) * 100
+  const contextUsageRecords = useSessionMessageRecords(contextUsageSessionId ?? '');
+  const contextUsage = React.useMemo(
+    () => {
+      void contextUsageRecords;
+      return getContextUsage(contextLimit, outputLimit, contextUsageSessionId ?? undefined);
+    },
+    [contextLimit, contextUsageRecords, contextUsageSessionId, getContextUsage, outputLimit],
+  );
+  const visibleContextUsage = React.useMemo(
+    () => resolveDisplayContextUsage(contextUsageSessionId, contextUsage, contextLimit, outputLimit),
+    [contextLimit, contextUsage, contextUsageSessionId, outputLimit],
+  );
+  const displayPercentage = visibleContextUsage && visibleContextUsage.contextLimit > 0
+    ? (visibleContextUsage.totalTokens / visibleContextUsage.contextLimit) * 100
     : 0;
 
   return (
@@ -638,11 +650,11 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           <RiSettings3Line className="h-5 w-5" />
         </button>
       )}
-      {showContextUsage && contextUsage && contextUsage.totalTokens > 0 && (
+      {showContextUsage && visibleContextUsage && (
         <ContextUsageProgressDropdown
           percentage={displayPercentage}
-          totalTokens={contextUsage.totalTokens}
-          totalCost={contextUsage.totalCost}
+          totalTokens={visibleContextUsage.totalTokens}
+          totalCost={visibleContextUsage.totalCost}
           ariaLabel={t('contextUsage.aria.label')}
         />
       )}

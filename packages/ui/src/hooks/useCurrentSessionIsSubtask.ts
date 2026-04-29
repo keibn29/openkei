@@ -1,33 +1,50 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2/client';
-import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { getAllSyncSessions } from '@/sync/sync-refs';
-import { useDirectorySync } from '@/sync/sync-context';
+import { useSession } from '@/sync/sync-context';
 
-export function useCurrentSessionIsSubtask(): boolean {
+export type CurrentSessionSubtaskState = {
+  isSubtask: boolean;
+  parentSessionId: string | null;
+  parentDirectory: string | null;
+  parentTitle: string | null;
+};
+
+export function useCurrentSessionSubtaskState(): CurrentSessionSubtaskState {
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-
-  const isSubtaskInCurrentDirectory = useDirectorySync(
+  const subtaskNavigationHint = useSessionUIStore(
     React.useCallback((state) => {
-      if (!currentSessionId) return false;
-      const session = state.session.find((entry) => entry.id === currentSessionId);
-      return Boolean((session as Session | undefined)?.parentID);
+      if (!currentSessionId) {
+        return null;
+      }
+
+      const hint = state.subtaskNavigationHint;
+      return hint?.sessionId === currentSessionId ? hint : null;
     }, [currentSessionId]),
-    currentDirectory ?? undefined,
   );
 
+  const currentSession = useSession(currentSessionId);
+  const liveParentSessionId = typeof currentSession?.parentID === 'string' && currentSession.parentID.trim().length > 0
+    ? currentSession.parentID
+    : null;
+  const parentSessionId = liveParentSessionId ?? subtaskNavigationHint?.parentSessionId ?? null;
+  const parentSession = useSession(parentSessionId);
+
   return React.useMemo(() => {
-    if (isSubtaskInCurrentDirectory) {
-      return true;
-    }
+    const parentDirectory = (parentSession as Session & { directory?: string | null } | undefined)?.directory
+      ?? subtaskNavigationHint?.parentDirectory
+      ?? null;
+    const parentTitle = parentSession?.title?.trim() || null;
 
-    if (!currentSessionId) {
-      return false;
-    }
+    return {
+      isSubtask: Boolean(parentSessionId),
+      parentSessionId,
+      parentDirectory,
+      parentTitle,
+    };
+  }, [parentSession, parentSessionId, subtaskNavigationHint]);
+}
 
-    const fallbackSession = getAllSyncSessions().find((entry) => entry.id === currentSessionId);
-    return Boolean((fallbackSession as Session | undefined)?.parentID);
-  }, [currentSessionId, isSubtaskInCurrentDirectory]);
+export function useCurrentSessionIsSubtask(): boolean {
+  return useCurrentSessionSubtaskState().isSubtask;
 }

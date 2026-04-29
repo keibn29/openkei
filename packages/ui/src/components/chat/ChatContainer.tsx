@@ -1,6 +1,6 @@
 import React from 'react';
 import { RiArrowLeftLine } from '@remixicon/react';
-import type { Message, Part, Session } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@opencode-ai/sdk/v2';
 
 import { ChatInput } from './ChatInput';
 import { useUIStore } from '@/stores/useUIStore';
@@ -39,7 +39,7 @@ import {
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
-import { getAllSyncSessions } from '@/sync/sync-refs';
+import { useCurrentSessionSubtaskState } from '@/hooks/useCurrentSessionIsSubtask';
 import { useI18n } from '@/lib/i18n';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
@@ -411,23 +411,21 @@ export const ChatContainer: React.FC = () => {
     const isDesktopExpandedInput = isExpandedInput && !isMobile;
     const messageListRef = React.useRef<MessageListHandle | null>(null);
 
-    const parentSession = React.useMemo(() => {
-        if (!currentSessionId) return null;
-        const current = sessions.find((session) => session.id === currentSessionId);
-        const parentID = current?.parentID;
-        if (!parentID) return null;
-        return sessions.find((session) => session.id === parentID)
-            ?? getAllSyncSessions().find((session) => session.id === parentID)
-            ?? null;
-    }, [currentSessionId, sessions]);
+    const {
+        isSubtask: isCurrentSessionSubtask,
+        parentSessionId,
+        parentDirectory,
+        parentTitle,
+    } = useCurrentSessionSubtaskState();
 
     const handleReturnToParentSession = React.useCallback(() => {
-        if (!parentSession) return;
-        const parentDirectory = (parentSession as Session & { directory?: string | null }).directory ?? null;
-        setCurrentSession(parentSession.id, parentDirectory);
-    }, [parentSession, setCurrentSession]);
+        if (!parentSessionId) return;
+        setCurrentSession(parentSessionId, parentDirectory);
+    }, [parentDirectory, parentSessionId, setCurrentSession]);
 
-    const returnToParentButton = parentSession ? (
+    const parentSessionTitle = parentTitle ?? '';
+
+    const returnToParentButton = isCurrentSessionSubtask && parentSessionId ? (
         <Button
             type="button"
             variant="outline"
@@ -435,8 +433,8 @@ export const ChatContainer: React.FC = () => {
             onClick={handleReturnToParentSession}
             className="absolute left-3 top-3 z-20 !font-normal bg-[var(--surface-background)]/95"
             aria-label={t('chat.container.returnToParent.aria')}
-            title={parentSession.title?.trim()
-                ? t('chat.container.returnToParent.titleNamed', { title: parentSession.title })
+            title={parentSessionTitle
+                ? t('chat.container.returnToParent.titleNamed', { title: parentSessionTitle })
                 : t('chat.container.returnToParent.title')}
         >
             <RiArrowLeftLine className="h-4 w-4" />

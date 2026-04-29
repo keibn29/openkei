@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import { useSessions, useAllSessionStatuses, useSessionMessageRecords } from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -53,6 +53,7 @@ import { Button } from '@/components/ui/button';
 import { ProjectEditDialog } from '@/components/layout/ProjectEditDialog';
 import { useDrawerSwipe } from '@/hooks/useDrawerSwipe';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { resolveDisplayContextUsage } from '@/lib/contextUsage';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useI18n } from '@/lib/i18n';
@@ -392,7 +393,7 @@ function SessionItem({
 }
 
 function TokenUsageIndicator({ contextUsage }: { contextUsage: SessionContextUsage | null }) {
-  if (!contextUsage || contextUsage.totalTokens === 0) return null;
+  if (!contextUsage) return null;
 
   const percentage = Math.min(contextUsage.percentage, 999);
   const colorClass =
@@ -1489,7 +1490,18 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     : null;
   const contextLimit = (limit && typeof limit.context === 'number' ? limit.context : 0);
   const outputLimit = (limit && typeof limit.output === 'number' ? limit.output : 0);
-  const contextUsage = getContextUsage(contextLimit, outputLimit);
+  const currentSessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '');
+  const contextUsage = React.useMemo(
+    () => {
+      void currentSessionMessageRecords;
+      return getContextUsage(contextLimit, outputLimit);
+    },
+    [contextLimit, currentSessionMessageRecords, getContextUsage, outputLimit],
+  );
+  const visibleContextUsage = React.useMemo(
+    () => resolveDisplayContextUsage(currentSessionId, contextUsage, contextLimit, outputLimit),
+    [contextLimit, contextUsage, currentSessionId, outputLimit],
+  );
 
   const [isExpanded, setIsExpanded] = React.useState(false);
   const tauriIpcAvailable = React.useMemo(() => isTauriShell(), []);
@@ -1558,7 +1570,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         currentProjectColor={currentProjectColor}
         onToggle={() => setIsMobileSessionStatusBarCollapsed(false)}
         onNewSession={handleCreateSession}
-        contextUsage={contextUsage}
+        contextUsage={visibleContextUsage}
         childIndicators={currentSessionChildIndicators}
       />
     );
@@ -1590,7 +1602,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       getSessionAgentName={getSessionAgentName}
       getSessionTitle={getSessionTitle}
       needsAttention={needsAttention}
-      contextUsage={contextUsage}
+      contextUsage={visibleContextUsage}
       projects={projects}
       activeProjectId={activeProjectId}
       getProjectStatus={getProjectStatus}

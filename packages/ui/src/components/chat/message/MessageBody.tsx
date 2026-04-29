@@ -41,7 +41,7 @@ import TurnActivity from '../components/TurnActivity';
 import { createProjectPlanFile } from '@/lib/openchamberConfig';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { useSessions } from '@/sync/sync-context';
+import { useSessionDirectory, useSessions } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
@@ -87,9 +87,11 @@ const normalizeSubtaskModel = (model: SubtaskPartLike['model']): string | null =
 };
 
 
-const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
+const UserSubtaskPart: React.FC<{ part: SubtaskPartLike; sessionId?: string }> = ({ part, sessionId }) => {
     const [expanded, setExpanded] = React.useState(false);
+    const openSubtaskSession = useSessionUIStore((state) => state.openSubtaskSession);
     const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
+    const parentSessionDirectory = useSessionDirectory(sessionId);
     const { t } = useI18n();
 
     const description = typeof part.description === 'string' ? part.description.trim() : '';
@@ -149,7 +151,16 @@ const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
                         type="button"
                         className="typography-meta text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
                         onClick={() => {
-                            void setCurrentSession(taskSessionID);
+                            if (!taskSessionID) {
+                                return;
+                            }
+
+                            if (sessionId) {
+                                openSubtaskSession(taskSessionID, sessionId, parentSessionDirectory ?? null);
+                                return;
+                            }
+
+                            void setCurrentSession(taskSessionID, parentSessionDirectory ?? null);
                         }}
                     >
                         {t('chat.messageBody.subtask.openSession')}
@@ -323,7 +334,8 @@ const writeRevealedToolIds = (messageId: string, value: Set<string>): void => {
     revealedToolIdsByMessage.set(messageId, new Set(value));
 };
 
-const UserMessageBody = React.memo(({ messageId, parts, isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onRevert, onFork, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+const UserMessageBody = React.memo(({ sessionId, messageId, parts, isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onRevert, onFork, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+    sessionId?: string;
     messageId: string;
     parts: Part[];
     isMobile: boolean;
@@ -538,7 +550,7 @@ const UserMessageBody = React.memo(({ messageId, parts, isMobile, hasTouchInput,
                     if (isSubtaskPart(part)) {
                         return (
                             <React.Fragment key={part.id ?? `user-subtask-${index}`}>
-                                <UserSubtaskPart part={part} />
+                                <UserSubtaskPart part={part} sessionId={sessionId} />
                             </React.Fragment>
                         );
                     }
@@ -1318,6 +1330,7 @@ const AssistantMessageBody = React.memo(({
                         <FadeInOnReveal key={`tool-${toolPart.id}`}>
                             <ToolRevealOnMount animate={animatedToolIdsLookup.has(toolPart.id)} wipe>
                                 <ToolPart
+                                    sessionId={sessionId}
                                     part={toolPart}
                                     isExpanded={expandedTools.has(toolPart.id)}
                                     onToggle={onToggleTool}
@@ -1649,6 +1662,7 @@ const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
     if (isUser) {
         return (
             <UserMessageBody
+                sessionId={props.sessionId}
                 messageId={props.messageId}
                 parts={props.parts}
                 isMobile={props.isMobile}
