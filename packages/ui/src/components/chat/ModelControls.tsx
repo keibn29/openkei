@@ -55,6 +55,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import type { MobileControlsPanel } from './mobileControlsUtils';
+import { formatAgentName } from './mobileControlsUtils';
 import { useI18n } from '@/lib/i18n';
 import { useCurrentSessionIsSubtask } from '@/hooks/useCurrentSessionIsSubtask';
 
@@ -1072,14 +1073,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         if (!uiAgentName) {
             const buildAgent = primaryAgents.find(agent => agent.name === 'build');
             const defaultAgent = buildAgent || primaryAgents[0];
-            return defaultAgent ? capitalizeAgentName(defaultAgent.name) : 'Select Agent';
+            return defaultAgent ? formatAgentName(defaultAgent.name) : 'Select Agent';
         }
         const agent = agents.find(a => a.name === uiAgentName);
-        return agent ? capitalizeAgentName(agent.name) : capitalizeAgentName(uiAgentName);
-    };
-
-    const capitalizeAgentName = (name: string) => {
-        return name.charAt(0).toUpperCase() + name.slice(1);
+        return agent ? formatAgentName(agent.name) : formatAgentName(uiAgentName);
     };
 
     const renderIconBadge = (IconComp: IconComponent, label: string, key: string) => (
@@ -1248,7 +1245,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             <MobileOverlayPanel
                 open={true}
                 onClose={closeMobileTooltip}
-                title={capitalizeAgentName(currentAgent.name)}
+                title={formatAgentName(currentAgent.name)}
             >
                 <div className="flex flex-col gap-1.5">
                     {}
@@ -1761,7 +1758,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         className="typography-ui-label font-semibold"
                                         style={isSelected ? { color: `var(${agentColor.var})` } : undefined}
                                     >
-                                        {capitalizeAgentName(agent.name)}
+                                        {formatAgentName(agent.name)}
                                     </span>
                                     {isSelected && (
                                         <RiCheckLine className="h-4 w-4 text-primary ml-auto flex-shrink-0" />
@@ -2478,7 +2475,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 <div className="flex min-w-[200px] flex-col gap-2.5">
                     <div className="flex flex-col gap-0.5">
                         <span className="typography-micro font-semibold text-foreground">
-                            {capitalizeAgentName(currentAgent.name)}
+                            {formatAgentName(currentAgent.name)}
                         </span>
                         {currentAgent.description && (
                             <span className="typography-meta text-muted-foreground">{currentAgent.description}</span>
@@ -2748,7 +2745,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                                 'h-1 w-1 rounded-full agent-dot',
                                                                 getAgentColor(agent.name).class
                                                             )} />
-                                                            <span className="font-medium">{capitalizeAgentName(agent.name)}</span>
+                                                            <span className="font-medium">{formatAgentName(agent.name)}</span>
                                                         </div>
                                                         {agent.description && (
                                                             <span className="typography-meta text-muted-foreground max-w-[200px] ml-2.5 break-words">

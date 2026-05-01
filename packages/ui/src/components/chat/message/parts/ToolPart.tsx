@@ -43,7 +43,7 @@ import { resolveFallbackTaskSessionId } from './resolveFallbackTaskSessionId';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
 import { getAgentColor } from '@/lib/agentColors';
-import { capitalizeLabel } from '@/components/chat/mobileControlsUtils';
+import { formatAgentName } from '@/components/chat/mobileControlsUtils';
 
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: string; time?: { start: number; end?: number } };
 
@@ -1175,7 +1175,7 @@ const TaskToolSummary: React.FC<{
                     onClick={handleOpenSession}
                 >
                     <RiExternalLinkLine className="h-3.5 w-3.5 flex-shrink-0" />
-                    <span className="typography-meta text-primary font-medium">{t('chat.toolPart.openSubtask', { type: agentType.charAt(0).toUpperCase() + agentType.slice(1) })}</span>
+                    <span className="typography-meta text-primary font-medium">{t('chat.toolPart.openSubtask', { type: formatAgentName(agentType) })}</span>
                 </button>
             )}
 
@@ -2533,7 +2533,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
     const taskAgentName = isTaskTool && typeof input?.subagent_type === 'string' && input.subagent_type.trim().length > 0
         ? input.subagent_type.trim()
         : null;
-    const taskAgentLabel = taskAgentName ? capitalizeLabel(taskAgentName) : null;
+    const taskAgentLabel = taskAgentName ? formatAgentName(taskAgentName) : null;
     const taskToolTitle = taskAgentLabel ? `${displayName} · ${taskAgentLabel}` : displayName;
     const displayTitleNode = taskAgentName && taskAgentLabel ? (
         <>

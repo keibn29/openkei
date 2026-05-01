@@ -6,16 +6,30 @@ export const isPrimaryMode = (mode?: string) => mode === 'primary' || mode === '
 
 export const capitalizeLabel = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
+/**
+ * Formats an agent/subagent name for display:
+ * "business-analyst" → "Business Analyst"
+ * Handles hyphen-separated names by splitting on hyphens,
+ * capitalizing each word, and joining with spaces.
+ */
+export const formatAgentName = (name: string): string => {
+    if (!name || name.trim().length === 0) return name;
+    return name
+        .split('-')
+        .map((part) => capitalizeLabel(part))
+        .join(' ');
+};
+
 export const getAgentDisplayName = (agents: Agent[], agentName?: string) => {
     if (agentName) {
         const agent = agents.find((entry) => entry.name === agentName);
-        return agent ? capitalizeLabel(agent.name) : capitalizeLabel(agentName);
+        return agent ? formatAgentName(agent.name) : formatAgentName(agentName);
     }
 
     const primaryAgents = agents.filter((agent) => isPrimaryMode(agent.mode));
     const buildAgent = primaryAgents.find((agent) => agent.name === 'build');
     const fallbackAgent = buildAgent || primaryAgents[0] || agents[0];
-    return fallbackAgent ? capitalizeLabel(fallbackAgent.name) : 'Select agent';
+    return fallbackAgent ? formatAgentName(fallbackAgent.name) : 'Select agent';
 };
 
 type ProviderModel = { id?: string; name?: string };
