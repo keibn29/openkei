@@ -55,7 +55,7 @@ export const PlanCard: React.FC<PlanCardProps> = React.memo(({
   return (
     <section
       className={cn(
-        'mx-5 my-4 overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--primary-base)_14%,var(--interactive-border))] bg-[color-mix(in_srgb,var(--surface-subtle)_82%,var(--surface-elevated))] shadow-[0_14px_16px_-20px_color-mix(in_srgb,var(--primary-base)_70%,transparent)] sm:mx-8',
+        'mx-2! my-4 overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--primary-base)_14%,var(--interactive-border))] bg-[color-mix(in_srgb,var(--surface-subtle)_82%,var(--surface-elevated))] shadow-[0_14px_16px_-20px_color-mix(in_srgb,var(--primary-base)_70%,transparent)] sm:mx-8',
         className,
       )}
       data-chat-card="planner-plan"
