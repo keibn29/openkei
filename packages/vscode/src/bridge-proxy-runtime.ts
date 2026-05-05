@@ -1,6 +1,109 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { waitForApiUrl } from './opencode-ready';
 
+/**
+ * Windows-only: VS Code normalizes workspace paths to forward slashes, but OpenCode
+ * on Windows stores session directories with backslashes. For GET session requests
+ * with a `directory` query param containing forward slashes, also try the backslash
+ * form and merge deduplicated JSON array results.
+ *
+ * Only activates for the exact `/session` endpoint (not `/session/:id/...`).
+ * `URLSearchParams.get()` already decodes the value, so no manual decoding needed.
+ * Returns clean JSON headers (no stale upstream content-* headers) on merge.
+ *
+ * Returns a BridgeResponse if handled, or null to fall through to normal fetch.
+ */
+async function tryWindowsSessionDirectoryMerge(
+  normalizedPath: string,
+  normalizedMethod: string,
+  requestHeaders: Record<string, string>,
+  base: string,
+  id: string,
+  type: string,
+): Promise<BridgeResponse | null> {
+  if (
+    process.platform !== 'win32' ||
+    normalizedMethod !== 'GET'
+  ) {
+    return null;
+  }
+
+  // Exact match: `/session` or `/session?...` only — not `/session/:id/...`
+  const isExactSession =
+    normalizedPath === '/session' || normalizedPath.startsWith('/session?');
+  if (!isExactSession) return null;
+
+  const queryStart = normalizedPath.indexOf('?');
+  if (queryStart === -1) return null;
+
+  const basePath = normalizedPath.slice(0, queryStart);
+  const params = new URLSearchParams(normalizedPath.slice(queryStart + 1));
+  const dirValue = params.get('directory');
+  if (!dirValue || !dirValue.includes('/')) return null;
+
+  // URLSearchParams.get() returns decoded form; replace slashes in-place.
+  // URLSearchParams.set() takes raw value; toString() will re-encode.
+  const backslashDir = dirValue.replace(/\//g, '\\');
+  if (backslashDir === dirValue) return null;
+
+  params.set('directory', backslashDir);
+  const altQuery = params.toString();
+  const altPath = altQuery ? `${basePath}?${altQuery}` : basePath;
+  const altUrl = new URL(altPath.replace(/^\/+/, ''), base).toString();
+  const targetUrl = new URL(normalizedPath.replace(/^\/+/, ''), base).toString();
+
+  try {
+    const [primaryRes, altRes] = await Promise.all([
+      fetch(targetUrl, { method: 'GET', headers: requestHeaders }).catch(() => null),
+      fetch(altUrl, { method: 'GET', headers: requestHeaders }).catch(() => null),
+    ]);
+
+    if (!primaryRes?.ok && !altRes?.ok) return null;
+
+    const parseJson = async (res: Response | null) => {
+      if (!res?.ok) return null;
+      try {
+        const buf = await res.arrayBuffer();
+        return JSON.parse(Buffer.from(buf).toString('utf8'));
+      } catch { return null; }
+    };
+
+    const [primaryData, altData] = await Promise.all([
+      parseJson(primaryRes),
+      parseJson(altRes),
+    ]);
+
+    if (!Array.isArray(primaryData) && !Array.isArray(altData)) return null;
+
+    const seen = new Set<string>();
+    const merged: unknown[] = [];
+    for (const arr of [primaryData, altData]) {
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          const sid = item?.id;
+          if (typeof sid === 'string' && !seen.has(sid)) {
+            seen.add(sid);
+            merged.push(item);
+          }
+        }
+      }
+    }
+
+    const status = primaryRes?.ok ? primaryRes.status : (altRes?.status ?? 200);
+
+    return {
+      id, type, success: true,
+      data: {
+        status,
+        headers: { 'content-type': 'application/json' },
+        bodyBase64: Buffer.from(JSON.stringify(merged)).toString('base64'),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 type BridgeMessageInput = {
   id: string;
   type: string;
@@ -77,6 +180,12 @@ export async function handleProxyBridgeMessage(
         requestHeaders['Cache-Control'] = requestHeaders['Cache-Control'] || 'no-cache';
         requestHeaders.Connection = requestHeaders.Connection || 'keep-alive';
       }
+
+      // Windows: try alternate directory path form for session GET queries
+      const windowsMerged = await tryWindowsSessionDirectoryMerge(
+        normalizedPath, normalizedMethod, requestHeaders, base, id, type
+      );
+      if (windowsMerged) return windowsMerged;
 
       try {
         const response = await fetch(targetUrl, {
