@@ -77,7 +77,10 @@ export const normalizePath = (value?: string | null) => {
   if (!value) {
     return null;
   }
-  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalized = value
+    .replace(/\\/g, '/')
+    .replace(/^([a-z]):/, (_, letter: string) => letter.toUpperCase() + ':')
+    .replace(/\/+$/, '');
   return normalized.length === 0 ? '/' : normalized;
 };
 

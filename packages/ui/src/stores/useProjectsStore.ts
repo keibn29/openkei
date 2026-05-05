@@ -96,7 +96,9 @@ const normalizeProjectPath = (value: string): string => {
   const homeDirectory = safeStorage.getItem('homeDirectory') || useDirectoryStore.getState().homeDirectory || '';
   const expanded = resolveTildePath(trimmed, homeDirectory);
 
-  const normalized = expanded.replace(/\\/g, '/');
+  const normalized = expanded
+    .replace(/\\/g, '/')
+    .replace(/^([a-z]):/, (_, letter: string) => letter.toUpperCase() + ':');
   if (normalized === '/') {
     return '/';
   }
