@@ -2411,38 +2411,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         setShowSkillAutocomplete(false);
     }, [applyAutocompletePrefix, isMobile, setAutocompleteTab, setCommandQuery, setShowCommandAutocomplete, setShowFileMention, setShowSkillAutocomplete]);
 
-    const insertTextAtSelection = React.useCallback((text: string) => {
-        if (!text) {
-            return;
-        }
-
-        const textarea = textareaRef.current;
-        if (!textarea) {
-            const nextValue = message + text;
-            setMessage(nextValue);
-            updateAutocompleteState(nextValue, nextValue.length);
-            requestAnimationFrame(() => adjustTextareaHeight());
-            return;
-        }
-
-        const start = textarea.selectionStart ?? message.length;
-        const end = textarea.selectionEnd ?? message.length;
-        const nextValue = `${message.substring(0, start)}${text}${message.substring(end)}`;
-        setMessage(nextValue);
-        const cursorPosition = start + text.length;
-
-        requestAnimationFrame(() => {
-            const currentTextarea = textareaRef.current;
-            if (currentTextarea) {
-                currentTextarea.selectionStart = cursorPosition;
-                currentTextarea.selectionEnd = cursorPosition;
-            }
-            adjustTextareaHeight();
-        });
-
-        updateAutocompleteState(nextValue, cursorPosition);
-    }, [adjustTextareaHeight, message, updateAutocompleteState]);
-
     const clearDropTextSuppression = React.useCallback(() => {
         suppressNextFileDropTextInsertRef.current = false;
         pendingDroppedAbsolutePathsRef.current = [];
@@ -2489,24 +2457,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const value = e.target.value;
         const cursorPosition = e.target.selectionStart ?? value.length;
 
-        if (inputMode === 'normal' && value.startsWith('!')) {
-            const shellCommand = value.slice(1);
-            const nextCursor = Math.max(0, cursorPosition - 1);
-            setInputMode('shell');
-            setMessage(shellCommand);
-            adjustTextareaHeight();
-            setShowCommandAutocomplete(false);
-            setShowSkillAutocomplete(false);
-            setShowFileMention(false);
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.selectionStart = nextCursor;
-                    textareaRef.current.selectionEnd = nextCursor;
-                }
-            });
-            return;
-        }
-
         setMessage(value);
         adjustTextareaHeight();
         updateAutocompleteState(value, cursorPosition);
@@ -2547,11 +2497,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
         e.preventDefault();
 
-        const pastedText = e.clipboardData.getData('text');
-        if (pastedText) {
-            insertTextAtSelection(pastedText);
-        }
-
         for (const file of imageFiles) {
             try {
                 await addAttachedFile(file);
@@ -2560,7 +2505,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.clipboardAttachFailed'));
             }
         }
-    }, [addAttachedFile, currentSessionId, newSessionDraftOpen, insertTextAtSelection, t]);
+    }, [addAttachedFile, currentSessionId, newSessionDraftOpen, t]);
 
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string }) => {
 
