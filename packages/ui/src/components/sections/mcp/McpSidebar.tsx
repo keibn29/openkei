@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { RiAddLine, RiDeleteBinLine, RiMore2Line, RiPlugLine, RiRefreshLine, RiServerLine, RiGlobalLine } from '@remixicon/react';
+import { RiAddLine, RiDeleteBinLine, RiInformationLine, RiMore2Line, RiPlugLine, RiRefreshLine, RiServerLine, RiGlobalLine } from '@remixicon/react';
 import { useMcpConfigStore, type McpDraft, type McpServerConfig } from '@/stores/useMcpConfigStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useMcpStore } from '@/stores/useMcpStore';
@@ -84,6 +84,14 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
   const [openMenuMcp, setOpenMenuMcp] = React.useState<string | null>(null);
   const [isRefreshingStatus, setIsRefreshingStatus] = React.useState(false);
 
+  // Merge config servers and runtime-only MCP names for full visibility.
+  // Servers that exist in runtime but not in config are shown as read-only entries.
+  const runtimeOnlyNames = React.useMemo(() => {
+    if (!mcpStatus) return [];
+    const configNames = new Set(mcpServers.map((s) => s.name));
+    return Object.keys(mcpStatus).filter((name) => !configNames.has(name));
+  }, [mcpServers, mcpStatus]);
+
   const projectServers = React.useMemo(
     () => mcpServers.filter((server) => server.scope === 'project'),
     [mcpServers]
@@ -92,6 +100,8 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
     () => mcpServers.filter((server) => server.scope !== 'project'),
     [mcpServers]
   );
+
+  const allServersCount = mcpServers.length + runtimeOnlyNames.length;
 
   React.useEffect(() => {
     void loadMcpConfigs();
@@ -184,7 +194,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
         <SettingsProjectSelector className="mb-3" />
         <div className="flex items-center justify-between gap-2">
           <span className="typography-meta text-muted-foreground">
-            {t('settings.mcp.sidebar.total', { count: mcpServers.length })}
+            {t('settings.mcp.sidebar.total', { count: allServersCount })}
           </span>
           <Button size="sm"
             variant="ghost"
@@ -199,7 +209,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
 
       {/* List */}
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        {mcpServers.length === 0 ? (
+        {allServersCount === 0 ? (
           <div className="py-12 px-4 text-center text-muted-foreground">
             <RiPlugLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.mcp.sidebar.empty.title')}</p>
@@ -355,6 +365,48 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Runtime-only entries: MCP servers known to OpenCode runtime but not in local config */}
+            {runtimeOnlyNames.length > 0 && (
+              <>
+                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('settings.mcp.sidebar.group.runtimeServers')}
+                </div>
+                {runtimeOnlyNames.map((name) => {
+                  const runtimeStatus = mcpStatus[name];
+                  const tone = statusToneFromMcp(runtimeStatus?.status);
+                  const isSelected = selectedMcpName === name;
+
+                  return (
+                    <div
+                      key={name}
+                      className={cn(
+                        'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none',
+                        isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover',
+                      )}
+                    >
+                      <button
+                        onClick={() => {
+                          setSelectedMcp(name);
+                          setMcpDraft(null);
+                          onItemSelect?.();
+                        }}
+                        className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <StatusDot tone={tone} enabled={true} />
+                          <span className="typography-ui-label font-normal truncate text-foreground">{name}</span>
+                          <RiInformationLine className="h-3 w-3 text-muted-foreground/40 flex-shrink-0" />
+                        </div>
+                        <div className="typography-micro text-muted-foreground/40 truncate leading-tight pl-4 italic">
+                          {t('settings.mcp.sidebar.runtimeOnlyHint')}
+                        </div>
+                      </button>
                     </div>
                   );
                 })}

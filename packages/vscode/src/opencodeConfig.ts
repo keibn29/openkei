@@ -4,7 +4,7 @@ import os from 'node:os';
 import yaml from 'yaml';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+export const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
 const COMMAND_DIR = path.join(OPENCODE_CONFIG_DIR, 'commands');
 const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'config.json');
@@ -417,6 +417,74 @@ const findWorktreeRoot = (startDir?: string): string | null => {
     if (parent === current) return null;
     current = parent;
   }
+};
+
+/** List all user-level agent .md files with their paths (non-recursive, top-level + group subdirs). */
+export const listUserAgentFiles = (): Array<{ name: string; path: string; group?: string }> => {
+  const results: Array<{ name: string; path: string; group?: string }> = [];
+  if (!fs.existsSync(AGENT_DIR)) return results;
+  const entries = fs.readdirSync(AGENT_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      results.push({ name: entry.name.slice(0, -3), path: path.join(AGENT_DIR, entry.name) });
+    }
+  }
+  // Subdirectory groups
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const subEntries = fs.readdirSync(path.join(AGENT_DIR, entry.name), { withFileTypes: true });
+    for (const sub of subEntries) {
+      if (sub.isFile() && sub.name.endsWith('.md')) {
+        results.push({ name: sub.name.slice(0, -3), path: path.join(AGENT_DIR, entry.name, sub.name), group: entry.name });
+      }
+    }
+  }
+  return results;
+};
+
+/** List project-level agent .md files from working directory. */
+export const listProjectAgentFiles = (workingDirectory: string): Array<{ name: string; path: string }> => {
+  const results: Array<{ name: string; path: string }> = [];
+  for (const dir of [path.join(workingDirectory, '.opencode', 'agents'), path.join(workingDirectory, '.opencode', 'agent')]) {
+    if (!fs.existsSync(dir)) continue;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push({ name: entry.name.slice(0, -3), path: path.join(dir, entry.name) });
+      }
+    }
+  }
+  return results;
+};
+
+/** List all user-level command .md files. */
+export const listUserCommandFiles = (): Array<{ name: string; path: string }> => {
+  const results: Array<{ name: string; path: string }> = [];
+  for (const dir of [COMMAND_DIR, path.join(OPENCODE_CONFIG_DIR, 'command')]) {
+    if (!fs.existsSync(dir)) continue;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push({ name: entry.name.slice(0, -3), path: path.join(dir, entry.name) });
+      }
+    }
+  }
+  return results;
+};
+
+/** List project-level command .md files from working directory. */
+export const listProjectCommandFiles = (workingDirectory: string): Array<{ name: string; path: string }> => {
+  const results: Array<{ name: string; path: string }> = [];
+  for (const dir of [path.join(workingDirectory, '.opencode', 'commands'), path.join(workingDirectory, '.opencode', 'command')]) {
+    if (!fs.existsSync(dir)) continue;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push({ name: entry.name.slice(0, -3), path: path.join(dir, entry.name) });
+      }
+    }
+  }
+  return results;
 };
 
 const walkSkillMdFiles = (rootDir?: string | null): string[] => {

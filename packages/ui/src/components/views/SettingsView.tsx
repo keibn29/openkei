@@ -5,6 +5,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
+import { useMcpStore } from '@/stores/useMcpStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import {
@@ -26,6 +27,7 @@ import {
   RiListUnordered,
   RiNotification3Line,
   RiPaletteLine,
+  RiPuzzleLine,
   RiRobot2Line,
   RiRestartLine,
   RiServerLine,
@@ -52,6 +54,7 @@ import { UsagePage } from '@/components/sections/usage/UsagePage';
 import { MagicPromptsSidebar } from '@/components/sections/magic-prompts/MagicPromptsSidebar';
 import { MagicPromptsPage } from '@/components/sections/magic-prompts/MagicPromptsPage';
 import { GitPage } from '@/components/sections/git-identities/GitPage';
+import { PluginPage } from '@/components/sections/plugins/PluginPage';
 import type { OpenChamberSection } from '@/components/sections/openchamber/types';
 import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
 import { McpIcon } from '@/components/icons/McpIcon';
@@ -100,6 +103,7 @@ const pageOrder: SettingsPageSlug[] = [
   'usage',
   'skills.installed',
   'skills.catalog',
+  'plugins',
   'voice',
   'tunnel',
 ];
@@ -160,6 +164,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiMicLine;
     case 'tunnel':
       return RiGlobalLine;
+    case 'plugins':
+      return RiPuzzleLine;
     case 'home':
       return null;
     default:
@@ -346,6 +352,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
     if (settingsSlug === 'mcp') {
       void useMcpConfigStore.getState().loadMcpConfigs();
+      void useMcpStore.getState().refresh({ silent: true });
       return;
     }
     if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog') {
@@ -423,6 +430,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.voice.title');
       case 'tunnel':
         return t('settings.page.tunnel.title');
+      case 'plugins':
+        return t('settings.page.plugins.title');
       case 'home':
       default:
         return t('settings.view.home.title');
@@ -485,7 +494,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'mcp':
         return <McpPage />;
       case 'skills.installed':
-        return <SkillsPage view="installed" />;
+        return <SkillsSidebar />;
       case 'skills.catalog':
         return <SkillsPage view="catalog" />;
       case 'providers':
@@ -496,6 +505,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <MagicPromptsPage />;
       case 'git':
         return <GitPage />;
+      case 'plugins':
+        return <PluginPage />;
       case 'appearance':
       case 'chat':
       case 'shortcuts':

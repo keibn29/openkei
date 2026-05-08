@@ -19,7 +19,8 @@ export type SettingsPageSlug =
   | 'magic-prompts'
   | 'notifications'
   | 'voice'
-  | 'tunnel';
+  | 'tunnel'
+  | 'plugins';
 
 export type SettingsPageGroup =
   | 'appearance'
@@ -29,7 +30,8 @@ export type SettingsPageGroup =
   | 'git'
   | 'skills'
   | 'usage'
-  | 'advanced';
+  | 'advanced'
+  | 'plugins';
 
 export interface SettingsRuntimeContext {
   isVSCode: boolean;
@@ -56,6 +58,7 @@ export const SETTINGS_GROUP_LABELS: Record<SettingsPageGroup, string> = {
   skills: 'Skills',
   usage: 'Usage',
   advanced: 'Advanced',
+  plugins: 'Plugins',
 };
 
 export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
@@ -121,7 +124,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     slug: 'skills.installed',
     title: 'Skills',
     group: 'skills',
-    kind: 'split',
+    kind: 'single',
     keywords: ['skill', 'skills', 'instructions', 'install', 'catalog'],
   },
   {
@@ -180,6 +183,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   { slug: 'notifications', title: 'Notifications', group: 'general', kind: 'single', keywords: ['alerts', 'native', 'summary', 'summarization'], },
   { slug: 'voice', title: 'Voice', group: 'advanced', kind: 'single', keywords: ['tts', 'speech', 'voice'], isAvailable: (ctx) => !ctx.isVSCode },
   { slug: 'tunnel', title: 'Remote Tunnel', group: 'advanced', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: (ctx) => !ctx.isVSCode },
+  { slug: 'plugins', title: 'Plugin', group: 'plugins', kind: 'single', keywords: ['plugin', 'plugins', 'source', 'config', 'file', 'open'], isAvailable: (ctx) => ctx.isVSCode },
 ] as const;
 
 export const LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG: Record<SidebarSection, SettingsPageSlug> = {

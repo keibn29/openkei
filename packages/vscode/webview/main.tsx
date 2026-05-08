@@ -1006,6 +1006,18 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
     }
   }
 
+  // Handle plugins list: GET /api/plugins/list
+  if (normalizedPathname === '/api/plugins/list' && method === 'GET') {
+    const queryDirectory = url.searchParams.get('directory') || undefined;
+    try {
+      const data = await sendBridgeMessage('api:plugins:list', { directory: queryDirectory });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   return null;
 };
 

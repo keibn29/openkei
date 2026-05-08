@@ -1,35 +1,37 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
   createAgent,
-  createCommand,
+  updateAgent,
   deleteAgent,
-  deleteCommand,
   getAgentConfig,
   getAgentSources,
-  getCommandSources,
-  updateAgent,
+  createCommand,
   updateCommand,
-  type AgentScope,
-  type CommandScope,
-  AGENT_SCOPE,
-  COMMAND_SCOPE,
-  discoverSkills,
-  getSkillSources,
+  deleteCommand,
+  getCommandSources,
   createSkill,
   updateSkill,
   deleteSkill,
   readSkillSupportingFile,
   writeSkillSupportingFile,
   deleteSkillSupportingFile,
-  type SkillScope,
-  type DiscoveredSkill,
-  SKILL_SCOPE,
+  getSkillSources,
   listMcpConfigs,
   getMcpConfig,
   createMcpConfig,
   updateMcpConfig,
   deleteMcpConfig,
+  discoverSkills,
+  OPENCODE_CONFIG_DIR,
+  type AgentScope,
+  type CommandScope,
+  type SkillScope,
+  type DiscoveredSkill,
+  AGENT_SCOPE,
+  COMMAND_SCOPE,
+  SKILL_SCOPE,
 } from './opencodeConfig';
 import {
   getSkillsCatalog,
@@ -631,6 +633,58 @@ export async function handleConfigBridgeMessage(
       }
 
       return { id, type, success: false, error: `Unsupported method: ${normalizedMethod}` };
+    }
+
+    case 'api:plugins:list': {
+      const directory = (payload as { directory?: string })?.directory;
+      const workingDirectory = resolveWorkingDirectory(ctx, directory);
+      const items: Array<{
+        name: string;
+        type: 'config';
+        scope: string | null;
+        filePath: string | null;
+        description?: string;
+      }> = [];
+
+      // Discover existing config files
+      const userConfigFiles = [
+        path.join(OPENCODE_CONFIG_DIR, 'config.json'),
+        path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
+        path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
+      ];
+      const existingUserConfig = userConfigFiles.find((f) => fs.existsSync(f));
+      const projectConfigPaths: string[] = [];
+      if (workingDirectory) {
+        for (const cf of [
+          path.join(workingDirectory, 'opencode.json'),
+          path.join(workingDirectory, '.opencode', 'opencode.json'),
+          path.join(workingDirectory, '.opencode', 'opencode.jsonc'),
+        ]) {
+          if (fs.existsSync(cf)) projectConfigPaths.push(cf);
+        }
+      }
+
+      // Config file entries
+      if (existingUserConfig) {
+        items.push({ name: 'opencode', type: 'config', scope: 'system', filePath: existingUserConfig });
+      }
+      for (const cf of projectConfigPaths) {
+        const label = cf.includes('.opencode') ? 'Project Config (.opencode)' : 'Project Config';
+        items.push({ name: label, type: 'config', scope: 'project', filePath: cf });
+      }
+
+      // oh-my-openkei: clickable when the JSON file exists on disk
+      const ohMyOpenkeiPath = path.join(OPENCODE_CONFIG_DIR, 'oh-my-openkei.json');
+      const hasOhMyOpenkeiFile = fs.existsSync(ohMyOpenkeiPath);
+      items.push({
+        name: 'oh-my-openkei',
+        type: 'config',
+        scope: null,
+        filePath: hasOhMyOpenkeiFile ? ohMyOpenkeiPath : null,
+        description: hasOhMyOpenkeiFile ? undefined : 'Not configured',
+      });
+
+      return { id, type, success: true, data: items };
     }
 
     default:

@@ -31,6 +31,7 @@ import {
   RiExternalLinkLine,
   RiFileCodeLine,
   RiFolderLine,
+  RiInformationLine,
   RiPlugLine,
   RiUser3Line,
 } from '@remixicon/react';
@@ -634,6 +635,7 @@ export const McpPage: React.FC = () => {
 
   const selectedServer = selectedMcpName ? getMcpByName(selectedMcpName) : null;
   const isNewServer = Boolean(mcpDraft && mcpDraft.name === selectedMcpName && !selectedServer);
+  const isRuntimeOnly = selectedMcpName !== null && !isNewServer && !selectedServer && !mcpDraft;
 
   // ── form state ──
   const [draftName, setDraftName] = React.useState('');
@@ -1503,7 +1505,45 @@ export const McpPage: React.FC = () => {
           </div>
         )}
 
-        {/* Server Identity */}
+        {/* Runtime-only read-only view */}
+        {isRuntimeOnly && (
+          <div className="mb-6 px-2">
+            <div className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--surface-elevated)] p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <RiInformationLine className="h-5 w-5 text-muted-foreground" />
+                <h3 className="typography-ui-label font-medium text-foreground">{t('settings.mcp.page.runtimeOnly.title')}</h3>
+              </div>
+              <p className="typography-body text-muted-foreground">
+                {t('settings.mcp.page.runtimeOnly.description')}
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <Button
+                  variant={isConnected ? 'outline' : 'default'}
+                  size="xs"
+                  className="!font-normal"
+                  onClick={handleToggleConnect}
+                  disabled={isConnecting}
+                >
+                  {isConnecting ? t('settings.mcp.page.actions.working') : isConnected ? t('settings.mcp.page.actions.disconnect') : t('settings.mcp.page.actions.connect')}
+                </Button>
+                {isConnected && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="!font-normal gap-1 text-muted-foreground"
+                    onClick={() => void handleTestConnection()}
+                    disabled={isTestingConnection}
+                  >
+                    {isTestingConnection ? t('settings.mcp.page.actions.testing') : t('settings.mcp.page.actions.test')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Server Identity — skip for runtime-only */}
+        {!isRuntimeOnly && (
         <div className="mb-6">
           <div className="mb-1 px-1">
             <h3 className="typography-ui-header font-medium text-foreground">{t('settings.mcp.page.server.title')}</h3>
@@ -1613,8 +1653,11 @@ export const McpPage: React.FC = () => {
 
           </section>
         </div>
+        )}
 
         {/* Connection */}
+        {!isRuntimeOnly && (
+        <>
         <div className="mb-6">
           <div className="mb-1 px-1">
             <h3 className="typography-ui-header font-medium text-foreground">
@@ -1865,6 +1908,8 @@ export const McpPage: React.FC = () => {
             </Button>
           )}
         </div>
+      </>
+      )}
       </div>
 
       {/* Import JSON dialog */}
