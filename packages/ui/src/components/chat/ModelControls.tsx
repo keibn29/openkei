@@ -55,7 +55,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import type { MobileControlsPanel } from './mobileControlsUtils';
-import { formatAgentName } from './mobileControlsUtils';
+import { formatAgentName, isPrimaryMode } from './mobileControlsUtils';
 import { useI18n } from '@/lib/i18n';
 import { useCurrentSessionIsSubtask } from '@/hooks/useCurrentSessionIsSubtask';
 
@@ -317,7 +317,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     // Use visible agents (excludes hidden internal agents)
     const agents = getVisibleAgents();
-    const primaryAgents = React.useMemo(() => agents.filter((agent) => agent.mode === 'primary'), [agents]);
+    const primaryAgents = React.useMemo(() => agents.filter((agent) => isPrimaryMode(agent.mode)), [agents]);
 
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
     const isCurrentSessionSubtask = useCurrentSessionIsSubtask();

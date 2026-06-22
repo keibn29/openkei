@@ -50,7 +50,7 @@ import { isTauriShell, isVSCodeRuntime } from '@/lib/desktop';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { StopIcon } from '@/components/icons/StopIcon';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { MobileControlsPanel } from './mobileControlsUtils';
+import { isPrimaryMode, type MobileControlsPanel } from './mobileControlsUtils';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -877,7 +877,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const setAgent = useConfigStore((state) => state.setAgent);
     const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);
     const agents = getVisibleAgents();
-    const primaryAgents = React.useMemo(() => agents.filter((agent) => agent.mode === 'primary'), [agents]);
+    const primaryAgents = React.useMemo(() => agents.filter((agent) => isPrimaryMode(agent.mode)), [agents]);
     const isMobile = useUIStore((state) => state.isMobile);
     const isKeyboardOpen = useUIStore((state) => state.isKeyboardOpen);
     const inputBarOffset = useUIStore((state) => state.inputBarOffset);
