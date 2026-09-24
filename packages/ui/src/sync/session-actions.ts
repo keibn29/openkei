@@ -281,6 +281,15 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   const result = await sdk().session.update({ sessionID: sessionId, directory: sessionDirectory, title })
   if (result.data) {
     useGlobalSessionsStore.getState().upsertSession(result.data)
+    // Optimistically update child store so sidebar updates immediately
+    const store = getDirectoryStore(sessionDirectory)
+    const current = store.getState()
+    const sessions = [...current.session]
+    const idx = Binary.search(sessions, sessionId, (s) => s.id)
+    if (idx.found) {
+      sessions[idx.index] = result.data
+      store.setState({ session: sessions })
+    }
   }
 }
 
@@ -289,6 +298,15 @@ export async function shareSession(sessionId: string): Promise<Session | null> {
   const result = await sdk().session.share({ sessionID: sessionId, directory: sessionDirectory })
   if (result.data) {
     useGlobalSessionsStore.getState().upsertSession(result.data)
+    // Optimistically update child store so sidebar updates immediately
+    const store = getDirectoryStore(sessionDirectory)
+    const current = store.getState()
+    const sessions = [...current.session]
+    const idx = Binary.search(sessions, sessionId, (s) => s.id)
+    if (idx.found) {
+      sessions[idx.index] = result.data
+      store.setState({ session: sessions })
+    }
   }
   return result.data ?? null
 }
@@ -298,6 +316,15 @@ export async function unshareSession(sessionId: string): Promise<Session | null>
   const result = await sdk().session.unshare({ sessionID: sessionId, directory: sessionDirectory })
   if (result.data) {
     useGlobalSessionsStore.getState().upsertSession(result.data)
+    // Optimistically update child store so sidebar updates immediately
+    const store = getDirectoryStore(sessionDirectory)
+    const current = store.getState()
+    const sessions = [...current.session]
+    const idx = Binary.search(sessions, sessionId, (s) => s.id)
+    if (idx.found) {
+      sessions[idx.index] = result.data
+      store.setState({ session: sessions })
+    }
   }
   return result.data ?? null
 }
@@ -522,6 +549,25 @@ export async function rejectQuestion(
 // ---------------------------------------------------------------------------
 
 /**
+ * Find all descendant sessions of a given session ID.
+ * Returns all sessions where parentID === sessionId (transitive).
+ */
+function findDescendantSessions(sessionId: string): Session[] {
+  const descendants: Session[] = []
+  const collect = (parentId: string) => {
+    const store = dirStore()
+    const state = store.getState()
+    const children = state.session.filter((s) => (s as Session & { parentID?: string | null }).parentID === parentId)
+    children.forEach((child) => {
+      descendants.push(child)
+      collect(child.id)
+    })
+  }
+  collect(sessionId)
+  return descendants
+}
+
+/**
  * Revert to a specific user message.
  *
  * 1. Abort if session is busy
@@ -529,6 +575,7 @@ export async function rejectQuestion(
  * 3. Optimistically set revert marker so messages hide immediately
  * 4. Call SDK session.revert() and merge returned session
  * 5. Set pendingInputText so the reverted message text appears in the input
+ * 6. Cascading revert: find and revert all child sessions
  */
 export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
   const store = dirStore()
@@ -607,6 +654,34 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
         store.setState({ session: updated })
       }
     }
+
+    // Cascading revert: find and revert all descendant sessions
+    const descendants = findDescendantSessions(sessionId)
+    const revertPromises = descendants.map(async (descendant) => {
+      try {
+        const descendantDirectory = getSessionDirectory(descendant.id)
+        const descendantMessages = state.message[descendant.id] ?? []
+        // Find the message in the descendant with the same created time, or use the first user message
+        let targetMsg: { time?: { created?: number }; id?: string } | undefined
+        if (messages.length > 0) {
+          const targetMsgFromOriginal = messages.find((m) => (m as { time?: { created?: number } }).time?.created === (messages[0] as { time?: { created?: number } })?.time?.created)
+          if (targetMsgFromOriginal) {
+            targetMsg = descendantMessages.find((m) => (m as { time?: { created?: number } }).time?.created === targetMsgFromOriginal.time?.created)
+          }
+        }
+        if (!targetMsg) {
+          targetMsg = descendantMessages.find((m) => (m as { role?: string }).role === 'user')
+        }
+        const targetMessageId = targetMsg?.id ?? descendantMessages.find((m) => (m as { role?: string }).role === 'user')?.id
+        if (targetMessageId) {
+          await sdk().session.revert({ sessionID: descendant.id, directory: descendantDirectory, messageID: targetMessageId })
+        }
+      } catch (err) {
+        console.error(`[session-actions] Failed to revert descendant ${descendant.id}`, err)
+        // Continue with other descendants even if one fails
+      }
+    })
+    await Promise.all(revertPromises)
   } catch (err) {
     // Rollback: restore removed messages + revert marker
     const current = store.getState()

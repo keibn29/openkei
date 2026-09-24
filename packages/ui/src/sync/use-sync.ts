@@ -247,9 +247,11 @@ export function useSync() {
           patch.part = partUpdate
         }
         store.setState(patch)
+        // Set cursor based on result: if we had a before and got limit items, use oldest ID
+        const newCursor = options?.before && messages.length >= m.limit ? merged.cursor : undefined
         setMetaFor(sessionID, {
           limit: messages.length,
-          cursor: merged.cursor,
+          cursor: newCursor,
           complete: merged.complete,
           loading: false,
         })
@@ -257,7 +259,7 @@ export function useSync() {
           directory,
           sessionID,
           limit: messages.length,
-          cursor: merged.cursor,
+          cursor: newCursor,
           complete: merged.complete,
         })
       } catch {
@@ -332,10 +334,25 @@ export function useSync() {
     async (sessionID: string) => {
       touch(sessionID)
       const m = getMetaFor(sessionID)
-      if (m.loading || m.complete || !m.cursor) return
+      if (m.loading || m.complete) return
+      // If cursor is undefined but we have messages, use oldest message ID as before
+      if (!m.cursor) {
+        const current = store.getState()
+        const messages = current.message[sessionID] ?? []
+        if (messages.length >= m.limit) {
+          // Use the oldest message ID (first in the array) as before
+          const oldestMessage = messages[0] as { id?: string } | undefined
+          const oldestMessageId = oldestMessage?.id
+          if (oldestMessageId) {
+            await loadMessages(sessionID, { before: oldestMessageId, mode: "prepend" })
+            return
+          }
+        }
+        return
+      }
       await loadMessages(sessionID, { before: m.cursor, mode: "prepend" })
     },
-    [touch, getMetaFor, loadMessages],
+    [touch, getMetaFor, loadMessages, store],
   )
 
   const hasMore = useCallback(

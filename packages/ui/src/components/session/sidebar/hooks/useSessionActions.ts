@@ -121,7 +121,7 @@ export const useSessionActions = (args: Args) => {
 
   const handleShareSession = React.useCallback(async (session: Session) => {
     const result = await args.shareSession(session.id);
-    if (result && result.share?.url) {
+    if (result) {
       toast.success(t('sessions.sidebar.session.share.successTitle'), {
         description: t('sessions.sidebar.session.share.successDescription'),
       });
