@@ -271,6 +271,39 @@ export type SessionUIState = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Compute target message to revert to for slash undo, guarding against -1 index fallback */
+export function computeSlashUndoTarget<T extends { id: string }>(
+  userMessages: T[],
+  revertToId: string | undefined,
+): T | undefined {
+  if (userMessages.length === 0) return undefined
+  if (revertToId) {
+    const revertIndex = userMessages.findIndex((m) => m.id === revertToId)
+    // Guard against -1 destructive fallback: if not found, do not fall back to 0 (-1 + 1)
+    if (revertIndex > 0) {
+      return userMessages[revertIndex - 1]
+    }
+    return undefined // Already at earliest user message or invalid revertToId
+  }
+  return userMessages[userMessages.length - 1]
+}
+
+/** Compute action for slash redo: step forward to next reverted user message or full unrevert */
+export function computeSlashRedoAction<T extends { id: string }>(
+  userMessages: T[],
+  revertToId: string | undefined,
+): { type: "revert"; target: T } | { type: "unrevert" } | undefined {
+  if (!revertToId) return undefined
+  const revertIndex = userMessages.findIndex((m) => m.id === revertToId)
+  // Guard against unknown revert marker: if not found in user messages, do not guess
+  if (revertIndex === -1) return undefined
+
+  if (revertIndex + 1 < userMessages.length) {
+    return { type: "revert", target: userMessages[revertIndex + 1] }
+  }
+  return { type: "unrevert" }
+}
+
 const normalizePath = (value?: string | null): string | null => {
   if (typeof value !== "string") return null
   const trimmed = value.trim()
@@ -1117,16 +1150,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const currentSession = sessions.find((s) => s.id === sessionId)
 
     const userMessages = messages.filter((m) => m.role === "user")
-    if (userMessages.length === 0) return
-
     const revertToId = currentSession?.revert?.messageID
-    let targetMessage: typeof messages[number] | undefined
-    if (revertToId) {
-      const revertIndex = userMessages.findIndex((m) => m.id === revertToId)
-      targetMessage = userMessages[revertIndex + 1]
-    } else {
-      targetMessage = userMessages[userMessages.length - 1]
-    }
+    const targetMessage = computeSlashUndoTarget(userMessages, revertToId)
 
     if (!targetMessage) return
 
@@ -1153,10 +1178,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     const messages = getSyncMessages(sessionId)
     const userMessages = messages.filter((m) => m.role === "user")
-    const revertIndex = userMessages.findIndex((m) => m.id === revertToId)
-    const targetMessage = userMessages[revertIndex - 1]
+    const action = computeSlashRedoAction(userMessages, revertToId)
+    if (!action) return
 
-    if (targetMessage) {
+    if (action.type === "revert") {
+      const targetMessage = action.target
       const targetParts = getSyncParts(targetMessage.id)
       const textPart = targetParts.find((p: Part) => p.type === "text") as TextPart | undefined
       const preview = textPart?.text

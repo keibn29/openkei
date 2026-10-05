@@ -14,6 +14,15 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { usePermissionStore } from "@/stores/permissionStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
+import {
+  buildRevertPlan,
+  isRevertInflight,
+  lockRevertSessions,
+  unlockRevertSessions,
+  assertNoConcurrentMessagesAfterNow,
+  fetchAllSessionMessages,
+  discoverTransitiveChildren,
+} from "./revert-plan"
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
 let _sdk: OpencodeClient | null = null
@@ -383,11 +392,19 @@ export async function optimisticSend(input: {
   /** The actual API call — receives the optimistic messageID so the server can use the same ID */
   send: (messageID: string) => Promise<void>
 }): Promise<void> {
+  if (isRevertInflight(input.sessionId)) {
+    throw new Error(`Cannot send message: revert operation in progress for session ${input.sessionId}`)
+  }
+
   if (!_optimisticAdd || !_optimisticRemove) {
     throw new Error("Optimistic refs not set — is useSync() mounted?")
   }
 
   await waitForConnectionOrThrow()
+
+  if (isRevertInflight(input.sessionId)) {
+    throw new Error(`Cannot send message: revert operation in progress for session ${input.sessionId}`)
+  }
 
   const store = dirStore()
   const messageID = ascendingId("msg")
@@ -548,184 +565,272 @@ export async function rejectQuestion(
 // Message history
 // ---------------------------------------------------------------------------
 
-/**
- * Find all descendant sessions of a given session ID.
- * Returns all sessions where parentID === sessionId (transitive).
- */
-function findDescendantSessions(sessionId: string): Session[] {
-  const descendants: Session[] = []
-  const collect = (parentId: string) => {
-    const store = dirStore()
-    const state = store.getState()
-    const children = state.session.filter((s) => (s as Session & { parentID?: string | null }).parentID === parentId)
-    children.forEach((child) => {
-      descendants.push(child)
-      collect(child.id)
-    })
+function reconcileRevertedSession(directory: string | undefined, session: Session) {
+  useGlobalSessionsStore.getState().upsertSession(session)
+  if (_childStores) {
+    const dirToUse = directory || _getDirectory()
+    if (dirToUse) {
+      const store = _childStores.ensureChild(dirToUse)
+      const current = store.getState()
+      const sessions = [...current.session]
+      const idx = sessions.findIndex((s) => s.id === session.id)
+      if (idx >= 0) {
+        sessions[idx] = session
+        store.setState({ session: sessions })
+      }
+    }
   }
-  collect(sessionId)
-  return descendants
 }
 
 /**
  * Revert to a specific user message.
  *
- * 1. Abort if session is busy
- * 2. Extract text from the target message for prompt restoration
- * 3. Optimistically set revert marker so messages hide immediately
- * 4. Call SDK session.revert() and merge returned session
- * 5. Set pendingInputText so the reverted message text appears in the input
- * 6. Cascading revert: find and revert all child sessions
+ * Implements timestamp-based cascading revert:
+ * 1. Captures cutoff from root target message and upper bound Date.now at entry before await.
+ * 2. Scans all transitive child sessions via SDK session.children.
+ * 3. Reverts each child only from its FIRST USER MESSAGE where cutoff <= time.created <= capturedNow.
+ * 4. Preserves prefix from turn 1. Children with no matching user message are untouched.
+ * 5. Aborts planned busy sessions if necessary (never preserved-only children).
+ * 6. Executes sequentially: deepest children first, root parent last.
+ * 7. Reconciles each successful session with fresh store refs without fake rollbacks or optimistic data deletion.
+ * 8. Restores prompt only after root confirmed success and session is still active.
  */
 export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
-  const store = dirStore()
-  const state = store.getState()
+  // Capture upper bound and root directory ONCE at entry before any await
+  const capturedNow = Date.now()
+  const capturedRootDir = getSessionDirectory(sessionId) || dir()
 
-  // Abort if busy before mutating session state
-  const status = state.session_status[sessionId]
-  if (status && status.type !== "idle") {
-    try {
-      await sdk().session.abort({ sessionID: sessionId, directory: dir() })
-    } catch {
-      // ignore abort errors
-    }
+  // 1. Reserve root BEFORE first await
+  if (isRevertInflight(sessionId)) {
+    throw new Error(`Conflicting revert/unrevert operation already in progress for session ${sessionId}`)
   }
+  lockRevertSessions([sessionId])
+  const lockedSessionIds = new Set<string>([sessionId])
 
-  // Extract message text for prompt restoration (only non-synthetic text parts —
-  // the server adds file content as synthetic text parts that should not be restored)
-  const messages = state.message[sessionId] ?? []
-  const targetMsg = messages.find((m) => m.id === messageId)
-  let messageText = ""
-  if (targetMsg && targetMsg.role === "user") {
-    const parts = state.part[messageId] ?? []
-    const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
-    messageText = textParts
-      .map((p: Record<string, unknown>) => (p as { text?: string }).text || (p as { content?: string }).content || "")
-      .join("\n")
-      .trim()
-  }
-
-  // Optimistically remove reverted messages + set marker
-  const prevRevert = (() => {
-    const s = state.session.find((s) => s.id === sessionId)
-    return (s as Session & { revert?: unknown })?.revert
-  })()
-  const sessions = [...state.session]
-  const sessionIdx = sessions.findIndex((s) => s.id === sessionId)
-
-  // Remove messages at and after the revert point from the store
-  const prevMessages = state.message[sessionId] ?? []
-  const prevPart = { ...state.part }
-  const keptMessages = prevMessages.filter((m) => m.id < messageId)
-  const removedMessages = prevMessages.filter((m) => m.id >= messageId)
-  for (const m of removedMessages) {
-    delete prevPart[m.id]
-  }
-
-  const patch: Record<string, unknown> = {
-    message: { ...state.message, [sessionId]: keptMessages },
-    part: prevPart,
-  }
-
-  if (sessionIdx >= 0) {
-    sessions[sessionIdx] = { ...sessions[sessionIdx], revert: { messageID: messageId } } as Session
-    patch.session = sessions
-  }
-
-  store.setState(patch)
-
-  // Restore reverted message text to input
-  if (messageText) {
-    useInputStore.setState({
-      pendingInputText: messageText,
-      pendingInputMode: "replace" as const,
-    })
-  }
-
-  // Call SDK and merge authoritative result into store
   try {
-    const result = await sdk().session.revert({ sessionID: sessionId, directory: dir(), messageID: messageId })
-    if (result.data) {
-      const current = store.getState()
-      const updated = [...current.session]
-      const idx = updated.findIndex((s) => s.id === sessionId)
-      if (idx >= 0) {
-        updated[idx] = result.data
-        store.setState({ session: updated })
+    // Collect local cached sessions to ensure SDK + local cache union
+    const localDescendants: Session[] = []
+    if (_childStores) {
+      for (const store of _childStores.children.values()) {
+        localDescendants.push(...store.getState().session)
       }
     }
 
-    // Cascading revert: find and revert all descendant sessions
-    const descendants = findDescendantSessions(sessionId)
-    const revertPromises = descendants.map(async (descendant) => {
-      try {
-        const descendantDirectory = getSessionDirectory(descendant.id)
-        const descendantMessages = state.message[descendant.id] ?? []
-        // Find the message in the descendant with the same created time, or use the first user message
-        let targetMsg: { time?: { created?: number }; id?: string } | undefined
-        if (messages.length > 0) {
-          const targetMsgFromOriginal = messages.find((m) => (m as { time?: { created?: number } }).time?.created === (messages[0] as { time?: { created?: number } })?.time?.created)
-          if (targetMsgFromOriginal) {
-            targetMsg = descendantMessages.find((m) => (m as { time?: { created?: number } }).time?.created === targetMsgFromOriginal.time?.created)
-          }
-        }
-        if (!targetMsg) {
-          targetMsg = descendantMessages.find((m) => (m as { role?: string }).role === 'user')
-        }
-        const targetMessageId = targetMsg?.id ?? descendantMessages.find((m) => (m as { role?: string }).role === 'user')?.id
-        if (targetMessageId) {
-          await sdk().session.revert({ sessionID: descendant.id, directory: descendantDirectory, messageID: targetMessageId })
-        }
-      } catch (err) {
-        console.error(`[session-actions] Failed to revert descendant ${descendant.id}`, err)
-        // Continue with other descendants even if one fails
-      }
-    })
-    await Promise.all(revertPromises)
-  } catch (err) {
-    // Rollback: restore removed messages + revert marker
-    const current = store.getState()
-    const rollback = [...current.session]
-    const idx = rollback.findIndex((s) => s.id === sessionId)
-    if (idx >= 0) {
-      rollback[idx] = { ...rollback[idx], revert: prevRevert } as Session
+    // 2. Discover transitive children
+    const initialChildren = await discoverTransitiveChildren(
+      sdk(),
+      sessionId,
+      capturedRootDir,
+      localDescendants,
+    )
+
+    // Snapshot initial revert markers of discovered descendants
+    const initialRevertMarkers = new Map<string, string | undefined>()
+    for (const child of initialChildren) {
+      initialRevertMarkers.set(child.id, child.revert?.messageID)
     }
-    store.setState({
-      session: rollback,
-      message: { ...current.message, [sessionId]: prevMessages },
-      part: { ...current.part, ...Object.fromEntries(removedMessages.map((m) => [m.id, state.part[m.id] ?? []])) },
+
+    // 3. Acquire child plan locks safely, avoiding same root reacquire and deduplicating
+    const childIdsToLock = Array.from(new Set(initialChildren.map((c) => c.id))).filter(
+      (id) => !lockedSessionIds.has(id),
+    )
+    if (childIdsToLock.length > 0) {
+      lockRevertSessions(childIdsToLock)
+      for (const id of childIdsToLock) {
+        lockedSessionIds.add(id)
+      }
+    }
+
+    // 4. Recheck topology: fail safe if new child discovered before mutation plan
+    const recheckedChildren = await discoverTransitiveChildren(
+      sdk(),
+      sessionId,
+      capturedRootDir,
+      localDescendants,
+    )
+    for (const child of recheckedChildren) {
+      if (!lockedSessionIds.has(child.id)) {
+        throw new Error(
+          `Topology changed: new child session ${child.id} discovered before execution plan`
+        )
+      }
+    }
+
+    // 5. Watch changed current revert marker: reject stale completed descendant operations
+    for (const child of recheckedChildren) {
+      const initialMarker = initialRevertMarkers.get(child.id)
+      const currentMarker = child.revert?.messageID
+      if (currentMarker !== initialMarker) {
+        throw new Error(
+          `Stale revert plan: descendant session ${child.id} revert marker changed during planning`
+        )
+      }
+    }
+
+    // 6. Build execution plan under reservations
+    const plan = await buildRevertPlan({
+      client: sdk(),
+      rootSessionId: sessionId,
+      rootMessageId: messageId,
+      rootDirectory: capturedRootDir,
+      capturedNow,
+      localDescendants,
+      discoveredChildren: recheckedChildren,
     })
-    throw err
+
+    // 7. Abort planned busy sessions if necessary (never preserved-only child)
+    for (const target of plan.targets) {
+      const targetStore = target.directory ? _childStores?.ensureChild(target.directory) : dirStore()
+      const status = targetStore?.getState().session_status[target.sessionID]
+      if (status && status.type !== "idle") {
+        const abortRes = await sdk().session.abort({
+          sessionID: target.sessionID,
+          directory: target.directory,
+        })
+        if (abortRes.error) {
+          const msg = (abortRes.error as { message?: string })?.message || "Abort error"
+          throw new Error(`Failed to abort busy session ${target.sessionID}: ${msg}`)
+        }
+        if (abortRes.data === false) {
+          throw new Error(`Failed to abort busy session ${target.sessionID}: abort returned false`)
+        }
+        if (targetStore) {
+          targetStore.setState({
+            session_status: {
+              ...targetStore.getState().session_status,
+              [target.sessionID]: { type: "idle" },
+            },
+          })
+        }
+      }
+    }
+
+    // 8. Revalidate raw history after abort/quiescence for ALL planned targets before any writes
+    for (const target of plan.targets) {
+      const quiescenceResult = await fetchAllSessionMessages(sdk(), target.sessionID, target.directory)
+      assertNoConcurrentMessagesAfterNow(quiescenceResult.messages, target.sessionID, capturedNow)
+    }
+
+    // 9. Deterministic sequential execution: deepest-child first, then root parent
+    const successfulSessionIds: string[] = []
+    for (const target of plan.targets) {
+      try {
+        // Revalidate raw history immediately before EACH revert with original capturedNow
+        const preRevertResult = await fetchAllSessionMessages(sdk(), target.sessionID, target.directory)
+        assertNoConcurrentMessagesAfterNow(preRevertResult.messages, target.sessionID, capturedNow)
+
+        const stillExists = preRevertResult.messages.some((m) => m.id === target.messageID)
+        if (!stillExists) {
+          throw new Error(`Target message ${target.messageID} no longer exists in session ${target.sessionID}`)
+        }
+
+        const result = await sdk().session.revert({
+          sessionID: target.sessionID,
+          directory: target.directory,
+          messageID: target.messageID,
+        })
+
+        if (result.error) {
+          const msg = (result.error as { message?: string })?.message || "Revert error"
+          throw new Error(msg)
+        }
+        if (!result.data) {
+          throw new Error(`Missing revert response data for session ${target.sessionID}`)
+        }
+        if (result.data.id !== target.sessionID) {
+          throw new Error(`Revert session ID mismatch: expected ${target.sessionID}, got ${result.data.id}`)
+        }
+        if (result.data.revert?.messageID !== target.messageID) {
+          throw new Error(
+            `Revert message ID mismatch for session ${target.sessionID}: expected ${target.messageID}, got ${result.data.revert?.messageID}`
+          )
+        }
+
+        reconcileRevertedSession(target.directory, result.data)
+        successfulSessionIds.push(target.sessionID)
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        if (successfulSessionIds.length > 0) {
+          throw new Error(
+            `Partial revert failure: successfully reverted sessions [${successfulSessionIds.join(", ")}], failed on session ${target.sessionID}: ${errorMsg}`
+          )
+        }
+        throw err
+      }
+    }
+
+    // 10. Prompt restoration only after root confirmed success and same current session still active
+    if (useSessionUIStore.getState().currentSessionId === sessionId) {
+      const storeParts = _childStores?.children.get(capturedRootDir || "")?.getState().part[messageId] ?? []
+      const parts = storeParts.length > 0 ? storeParts : plan.rootTargetParts
+      const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
+      const messageText = textParts
+        .map((p) => ((p as { text?: string }).text || (p as { content?: string }).content || ""))
+        .join("\n")
+        .trim()
+
+      if (messageText) {
+        useInputStore.setState({
+          pendingInputText: messageText,
+          pendingInputMode: "replace" as const,
+        })
+      }
+    }
+  } finally {
+    unlockRevertSessions(Array.from(lockedSessionIds))
   }
 }
 
 /**
  * Unrevert — restore all previously reverted messages.
- * Restore all previously reverted messages. Aborts if busy, merges result.
+ * Aborts if busy, merges result, and retains message history for recovery.
  */
 export async function unrevertSession(sessionId: string): Promise<void> {
-  const store = dirStore()
-  const state = store.getState()
-
-  // Abort if busy
-  const status = state.session_status[sessionId]
-  if (status && status.type !== "idle") {
-    try {
-      await sdk().session.abort({ sessionID: sessionId, directory: dir() })
-    } catch {
-      // ignore
-    }
+  if (isRevertInflight(sessionId)) {
+    throw new Error(`Conflicting revert/unrevert operation already in progress for session ${sessionId}`)
   }
+  lockRevertSessions([sessionId])
 
-  const result = await sdk().session.unrevert({ sessionID: sessionId, directory: dir() })
-  if (result.data) {
-    const current = store.getState()
-    const sessions = [...current.session]
-    const idx = sessions.findIndex((s) => s.id === sessionId)
-    if (idx >= 0) {
-      sessions[idx] = result.data
-      store.setState({ session: sessions })
+  try {
+    const sessionDirectory = getSessionDirectory(sessionId) || dir()
+    const store = sessionDirectory ? _childStores?.ensureChild(sessionDirectory) : dirStore()
+
+    // Abort if busy
+    const status = store?.getState().session_status[sessionId]
+    if (status && status.type !== "idle") {
+      const abortRes = await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
+      if (abortRes.error) {
+        const msg = (abortRes.error as { message?: string })?.message || "Abort error"
+        throw new Error(`Failed to abort session ${sessionId} before unrevert: ${msg}`)
+      }
+      if (abortRes.data === false) {
+        throw new Error(`Failed to abort session ${sessionId} before unrevert: abort returned false`)
+      }
+      if (store) {
+        store.setState({
+          session_status: {
+            ...store.getState().session_status,
+            [sessionId]: { type: "idle" },
+          },
+        })
+      }
     }
+
+    const result = await sdk().session.unrevert({ sessionID: sessionId, directory: sessionDirectory })
+    if (result.error) {
+      const msg = (result.error as { message?: string })?.message || "Unrevert error"
+      throw new Error(`Unrevert failed: ${msg}`)
+    }
+    if (!result.data) {
+      throw new Error(`Missing unrevert response data for session ${sessionId}`)
+    }
+    if (result.data.id !== sessionId) {
+      throw new Error(`Unrevert session ID mismatch: expected ${sessionId}, got ${result.data.id}`)
+    }
+
+    reconcileRevertedSession(sessionDirectory, result.data)
+  } finally {
+    unlockRevertSessions([sessionId])
   }
 }
 

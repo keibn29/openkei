@@ -3,6 +3,7 @@ import { useCallback } from "react"
 import { useSyncSDK } from "./sync-context"
 import { useDirectoryStore } from "./sync-context"
 import { useSync } from "./use-sync"
+import { isRevertInflight } from "./revert-plan"
 
 // ---------------------------------------------------------------------------
 // Ascending ID generator — monotonic timestamp + sequence counter
@@ -39,6 +40,10 @@ export function usePromptSubmit() {
 
   const submit = useCallback(
     async (input: SubmitInput) => {
+      if (isRevertInflight(input.sessionID)) {
+        throw new Error(`Cannot send message: revert operation in progress for session ${input.sessionID}`)
+      }
+
       const messageID = ascending("message")
 
       // Build optimistic user message

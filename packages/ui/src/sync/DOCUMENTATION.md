@@ -116,6 +116,55 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `archiveSession()` -> `archiveSessions([id], archivedAt)`
 - `deleteSession()` -> `removeSessions([id])`
 
+## Session revert and cascading policy
+
+Reverting a session restores conversation and assistant state back to a chosen user message. OpenChamber uses a **timestamp-based cascading revert** policy for main sessions and their transitive child sessions (subagents):
+
+### Policy details
+
+1. **Cutoff, upper bound capture, and root reservation**:
+   - The selected root message must be a valid user message with a positive, finite numeric `time.created` timestamp. This timestamp forms the `cutoff`.
+   - The upper bound `capturedNow` (`Date.now()`) is recorded once at operation entry before any asynchronous operation begins. Bound is never advanced, and all message roles (including assistants) are validated against it.
+   - If `cutoff > capturedNow`, or if any message timestamp is invalid/non-numeric, the operation fails closed immediately.
+   - Root session is reserved synchronously via `lockRevertSessions([sessionId])` **before the first await** to prevent concurrent conflicting operations (such as unrevert or new revert) during planning.
+
+2. **Transitive child discovery and reservation**:
+   - Descendant sessions are discovered recursively via authoritative SDK `session.children({ sessionID, directory })` (merged with local cache).
+   - Cycle detection and deduplication ensure acyclic traversal across multi-level hierarchies.
+   - Child session directories are captured authoritatively from `child.directory` to prevent directory leakage across awaits.
+   - Child plan locks are acquired safely avoiding same root reacquire, and all acquired locks are guaranteed to be released via `finally` across planning failure, abort failure, or execution failure.
+   - **Topology recheck**: Hierarchy is rechecked before the mutation plan begins; if a new child session is discovered, the operation fails closed safe before any writes.
+   - **Revert marker watch**: Descendant revert markers (`session.revert?.messageID`) are recorded at discovery and validated under reservations; if a descendant operation completed or changed its revert marker during planning, the plan is rejected as stale.
+
+3. **Cascade targeting and prefix preservation**:
+   - Each child session is scanned for user messages within the window: `cutoff <= time.created <= capturedNow`.
+   - If matching user messages exist, the child is reverted from its **first user message chronologically** in that window.
+   - Earlier turns before `cutoff` (e.g. Turn 1 prefix) are strictly preserved.
+   - **No fallback**: If a child session has no user message in that window (e.g. an older child session whose assistant completed late, or a task completed prior to cutoff), the child is left **completely untouched**.
+
+4. **Suffix revert and continuous revalidation**:
+   - Because the SDK/backend reverts the message suffix from `messageID` onward, later concurrent messages cannot be isolated.
+   - Any message created after `capturedNow` in a planned session triggers a fail-closed error to prevent silent data loss from concurrent writes. Existing message cleanup updates (e.g. abort completions with original `time.created <= capturedNow`) are preserved and do not trigger failure.
+   - Raw message history is revalidated against `capturedNow`:
+     a. **After abort/quiescence** for all planned targets before any writes occur.
+     b. **Immediately before EACH revert execution** in the sequential loop.
+   - If a concurrent write is detected after planning or during abort, the operation aborts with zero mutations. If a write is detected between child and root revert, the affected suffix is rejected and partial success of previously completed children is surfaced.
+
+5. **Deterministic sequential execution**:
+   - Planned sessions are executed sequentially in order of **deepest child first, shallower descendants next, and root session last** (never `Promise.all`).
+   - Only planned sessions with pending reverts are checked and aborted if busy; preserved-only children are never aborted.
+
+6. **Local send guard**:
+   - In-flight revert operations directly guard local send actions (`optimisticSend` and `usePromptSubmit`), immediately rejecting prompt submissions on a session being reverted.
+
+7. **Non-atomic partial failure**:
+   - Reverts commit on the server per session. If a failure occurs midway through the plan, previously committed session reverts cannot and must not be rolled back with fake optimistic restores.
+   - The failure explicitly surfaces the IDs of all successfully reverted sessions without logging sensitive content.
+
+8. **Limitation note**:
+   - Timestamp alignment operates on message creation times and assumes subagents finish within their parent turn. **Timestamp alignment does NOT guarantee concurrent ownership or filesystem overlap.**
+   - **Cross-client atomicity**: A full cross-client atomic revert guarantee is not achievable without distributed server-side transactions or locking. Blocking local sends and revalidating raw history immediately prior to each revert closes local collision windows and minimizes external race windows, but a narrow race remains if an external client writes to a session in the milliseconds between pre-revert revalidation and server execution.
+
 ## The golden rule
 
 When creating a draft in `handleDirectoryEvent`, **only clone the state fields the event will mutate**. Never spread all fields eagerly.

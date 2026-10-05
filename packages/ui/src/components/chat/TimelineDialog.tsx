@@ -13,6 +13,13 @@ import { RiLoader4Line, RiSearchLine, RiTimeLine, RiGitBranchLine, RiArrowGoBack
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { useI18n } from '@/lib/i18n';
+import { RevertConfirmDialog } from './RevertConfirmDialog';
+import {
+    handleTimelineRevertSuccess,
+    type HandleTimelineRevertSuccessOptions,
+} from './revertConfirmUtils';
+
+export type { HandleTimelineRevertSuccessOptions };
 
 interface TimelineDialogProps {
     open: boolean;
@@ -31,12 +38,22 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
 }) => {
     const { t } = useI18n();
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+    const currentSessionIdRef = React.useRef(currentSessionId);
+    currentSessionIdRef.current = currentSessionId;
     const messages = useSessionMessageRecords(currentSessionId ?? '');
-    const revertToMessage = useSessionUIStore((state) => state.revertToMessage);
     const forkFromMessage = useSessionUIStore((state) => state.forkFromMessage);
 
+    const [revertTarget, setRevertTarget] = React.useState<{ sessionId: string; messageId: string } | null>(null);
     const [forkingMessageId, setForkingMessageId] = React.useState<string | null>(null);
     const [searchQuery, setSearchQuery] = React.useState('');
+
+    const isMountedRef = React.useRef(true);
+    React.useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
 
     const formatRelativeTime = React.useCallback((timestamp: number): string => {
         const now = Date.now();
@@ -85,7 +102,8 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
     if (!currentSessionId) return null;
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl max-h-[70vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
@@ -150,10 +168,14 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                     <button
                                                         type="button"
                                                         className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                                                        onClick={async (e) => {
+                                                        onClick={(e) => {
                                                             e.stopPropagation();
-                                                            await revertToMessage(currentSessionId, message.info.id);
-                                                            onOpenChange(false);
+                                                            const targetSessionId = message.info.sessionID || currentSessionId;
+                                                            if (!targetSessionId || !message.info.id) return;
+                                                            setRevertTarget({
+                                                                sessionId: targetSessionId,
+                                                                messageId: message.info.id,
+                                                            });
                                                         }}
                                                     >
                                                         <RiArrowGoBackLine className="h-4 w-4" />
@@ -231,7 +253,28 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                 </div>
             </DialogContent>
         </Dialog>
-    );
+        <RevertConfirmDialog
+            open={revertTarget !== null}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen) {
+                    setRevertTarget(null);
+                }
+            }}
+            target={revertTarget}
+            onSuccess={(completedTarget) => {
+                const liveSessionId = useSessionUIStore.getState().currentSessionId ?? currentSessionIdRef.current;
+                const targetSessionId = completedTarget?.sessionId ?? revertTarget?.sessionId;
+                handleTimelineRevertSuccess({
+                    isMounted: () => isMountedRef.current,
+                    currentSessionId: liveSessionId,
+                    targetSessionId,
+                    onCloseTimeline: () => onOpenChange(false),
+                    onResetTarget: () => setRevertTarget(null),
+                });
+            }}
+        />
+    </>
+);
 };
 
 function getMessagePreview(parts: Part[]): string {

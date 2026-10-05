@@ -154,5 +154,23 @@ export {
   respondToQuestion,
   rejectQuestion,
   revertToMessage,
+  unrevertSession,
   forkFromMessage,
 } from "./session-actions"
+
+// Revert planning
+export {
+  buildRevertPlan,
+  findCascadeTargetMessage,
+  validateRootTargetMessage,
+  assertNoConcurrentMessagesAfterNow,
+  discoverTransitiveChildren,
+  fetchAllSessionMessages,
+  isValidTimestamp,
+  isRevertInflight,
+  lockRevertSessions,
+  unlockRevertSessions,
+  type RevertPlan,
+  type RevertTarget,
+  type DiscoveredSession,
+} from "./revert-plan"

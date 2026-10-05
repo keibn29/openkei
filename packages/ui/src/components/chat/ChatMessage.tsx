@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Message, Part, Session } from '@opencode-ai/sdk/v2';
+import type { Message, Part } from '@opencode-ai/sdk/v2';
 import { useShallow } from 'zustand/react/shallow';
 
 import { defaultCodeDark, defaultCodeLight } from '@/lib/codeTheme';
@@ -15,10 +15,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { cn } from '@/lib/utils';
-import { useDirectoryStore } from '@/sync/sync-context';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { useI18n } from '@/lib/i18n';
+import { RevertConfirmDialog } from './RevertConfirmDialog';
 
 import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatScrollManager';
 import MessageHeader from './message/MessageHeader';
@@ -153,47 +150,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     animateUserOnMount = false,
     onUserAnimationConsumed,
 }) => {
-    const { t } = useI18n();
     const { isMobile, hasTouchInput } = useDeviceInfo();
     const { currentTheme } = useThemeSystem();
     const messageContainerRef = React.useRef<HTMLDivElement | null>(null);
-    const directoryStore = useDirectoryStore();
 
     const [revertDialogOpen, setRevertDialogOpen] = React.useState(false);
     const [revertDialogTarget, setRevertDialogTarget] = React.useState<{ sessionId: string; messageId: string } | null>(null);
-
-    // Count all transitive descendants of a session so the dialog warns about
-    // subtasks that will also be reverted.
-    const countDescendantSessions = React.useCallback((sessionId: string): number => {
-        const state = directoryStore.getState();
-        const sessions = state.session;
-        let count = 0;
-        const queue: string[] = [sessionId];
-        const seen = new Set<string>([sessionId]);
-        while (queue.length > 0) {
-            const parentId = queue.shift() as string;
-            for (const s of sessions) {
-                const parentID = (s as Session & { parentID?: string | null }).parentID;
-                if (parentID === parentId && !seen.has(s.id)) {
-                    seen.add(s.id);
-                    count += 1;
-                    queue.push(s.id);
-                }
-            }
-        }
-        return count;
-    }, [directoryStore]);
-
-    const descendantCount = React.useMemo(() => {
-        if (!revertDialogTarget) return 0;
-        return countDescendantSessions(revertDialogTarget.sessionId);
-    }, [revertDialogTarget, countDescendantSessions]);
 
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
 
     const getAgentModelForSession = useSelectionStore((s) => s.getAgentModelForSession);
     const getSessionModelSelection = useSelectionStore((s) => s.getSessionModelSelection);
-    const revertToMessage = sessionActions.revertToMessage;
     const forkFromMessage = sessionActions.forkFromMessage;
 
     streamPerfCount('ui.chat_message.render');
@@ -786,19 +753,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         setRevertDialogOpen(true);
     }, [sessionId, message.info.id]);
 
-    const handleRevertConfirm = React.useCallback(async () => {
-        if (!revertDialogTarget) return;
-        const { sessionId, messageId } = revertDialogTarget;
-        await revertToMessage(sessionId, messageId);
-        setRevertDialogOpen(false);
-        setRevertDialogTarget(null);
-    }, [revertDialogTarget, revertToMessage]);
-
-    const handleRevertCancel = React.useCallback(() => {
-        setRevertDialogOpen(false);
-        setRevertDialogTarget(null);
-    }, []);
-
     const handleRevert = React.useCallback(() => {
         handleRevertClick();
     }, [handleRevertClick]);
@@ -1181,37 +1135,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     isMobile={isMobile}
                 />
             </React.Suspense>
-            <Dialog open={revertDialogOpen} onOpenChange={setRevertDialogOpen}>
-                <DialogContent showCloseButton={false} className="max-w-sm gap-5">
-                    <DialogHeader>
-                        <DialogTitle>{t('sessions.sidebar.session.revert.title')}</DialogTitle>
-                        <DialogDescription>
-                            {descendantCount === 0
-                                ? t('sessions.sidebar.session.revert.descriptionNone')
-                                : descendantCount === 1
-                                    ? t('sessions.sidebar.session.revert.descriptionSingle', { count: 1 })
-                                    : t('sessions.sidebar.session.revert.descriptionMany', { count: descendantCount })}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                        <Button
-                            type="button"
-                            onClick={handleRevertCancel}
-                            variant="outline"
-                            size="sm"
-                        >
-                            {t('sessions.sidebar.dialogs.cancel')}
-                        </Button>
-                        <Button
-                            type="button"
-                            onClick={handleRevertConfirm}
-                            size="sm"
-                        >
-                            {t('sessions.sidebar.session.revert.confirm')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <RevertConfirmDialog
+                open={revertDialogOpen}
+                onOpenChange={(nextOpen) => {
+                    setRevertDialogOpen(nextOpen);
+                    if (!nextOpen) {
+                        setRevertDialogTarget(null);
+                    }
+                }}
+                target={revertDialogTarget}
+                onSuccess={() => {
+                    setRevertDialogTarget(null);
+                }}
+            />
         </>
     );
 };
