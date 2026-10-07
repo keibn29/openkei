@@ -14,6 +14,7 @@ import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
+import { bumpSessionMutationVersion, markSessionDeleted } from "./session-mutation-version"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const DELTA_OVERLAP_FIELDS = ["text", "output"] as const
@@ -144,6 +145,7 @@ export function applyDirectoryEvent(
 
     case "session.created": {
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      bumpSessionMutationVersion(info.id)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
       if (result.found) {
@@ -158,6 +160,7 @@ export function applyDirectoryEvent(
 
     case "session.updated": {
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      bumpSessionMutationVersion(info.id)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
 
@@ -179,6 +182,7 @@ export function applyDirectoryEvent(
 
     case "session.deleted": {
       const info = (event.properties as { info: Session }).info
+      markSessionDeleted(info.id)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
       if (result.found) sessions.splice(result.index, 1)

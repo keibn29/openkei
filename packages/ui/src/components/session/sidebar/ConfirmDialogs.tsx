@@ -8,6 +8,7 @@ export type DeleteSessionConfirmState = {
   session: Session;
   descendantCount: number;
   archivedBucket: boolean;
+  hardDelete?: boolean;
 } | null;
 
 export function SessionDeleteConfirmDialog(props: {
@@ -20,17 +21,18 @@ export function SessionDeleteConfirmDialog(props: {
   const { t } = useI18n();
   const { value, setValue, showDeletionDialog, setShowDeletionDialog, onConfirm } = props;
   const untitledSession = t('sessions.sidebar.session.untitled');
+  const isHardDelete = Boolean(value?.hardDelete || value?.archivedBucket);
 
   return (
     <Dialog open={Boolean(value)} onOpenChange={(open) => { if (!open) setValue(null); }}>
       <DialogContent showCloseButton={false} className="max-w-sm gap-5">
         <DialogHeader>
-          <DialogTitle>{value?.archivedBucket
+          <DialogTitle>{isHardDelete
             ? t('sessions.sidebar.dialogs.deleteSession.title')
             : t('sessions.sidebar.dialogs.archiveSession.title')}</DialogTitle>
           <DialogDescription>
             {value && value.descendantCount > 0
-              ? value.archivedBucket
+              ? isHardDelete
                 ? value.descendantCount === 1
                   ? t('sessions.sidebar.dialogs.deleteSession.withOneSubtask', {
                     sessionTitle: value.session.title || untitledSession,
@@ -49,7 +51,7 @@ export function SessionDeleteConfirmDialog(props: {
                   sessionTitle: value.session.title || untitledSession,
                   count: value.descendantCount,
                 })
-              : value?.archivedBucket
+              : isHardDelete
                 ? t('sessions.sidebar.dialogs.deleteSession.single', {
                   sessionTitle: value?.session.title || untitledSession,
                 })
@@ -81,7 +83,7 @@ export function SessionDeleteConfirmDialog(props: {
               onClick={() => void onConfirm()}
               className="inline-flex h-8 items-center justify-center rounded-md bg-destructive px-3 typography-ui-label text-destructive-foreground hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
             >
-              {value?.archivedBucket ? t('sessions.sidebar.bulkActions.delete') : t('sessions.sidebar.bulkActions.archive')}
+              {isHardDelete ? t('sessions.sidebar.bulkActions.delete') : t('sessions.sidebar.bulkActions.archive')}
             </button>
           </div>
         </DialogFooter>

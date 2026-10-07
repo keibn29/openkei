@@ -4,6 +4,7 @@
  */
 
 import type { OpencodeClient, Session, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { State } from "./types"
 import { Binary } from "./binary"
 import { useSessionUIStore } from "./session-ui-store"
 import { useInputStore } from "./input-store"
@@ -14,6 +15,11 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { usePermissionStore } from "@/stores/permissionStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
+import { clearSessionPrefetch } from "./session-prefetch-cache"
+import {
+  getSessionMutationVersion,
+  markSessionDeleted,
+} from "./session-mutation-version"
 import {
   buildRevertPlan,
   isRevertInflight,
@@ -211,59 +217,379 @@ function optimisticRemoveSession(sessionId: string, directory?: string): Session
   const current = store.getState()
   const sessions = [...current.session]
   const result = Binary.search(sessions, sessionId, (s) => s.id)
-  if (result.found) {
+  let foundIndex = result.found ? result.index : -1
+  if (foundIndex === -1) {
+    foundIndex = sessions.findIndex((s) => s.id === sessionId)
+  }
+  if (foundIndex !== -1) {
     const snapshot = current.session
-    sessions.splice(result.index, 1)
+    sessions.splice(foundIndex, 1)
     store.setState({ session: sessions })
     return snapshot
   }
   return null
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function deleteSession(sessionId: string, _options?: Record<string, unknown>): Promise<boolean> {
-  const sessionDirectory = getSessionDirectory(sessionId)
-  // Remove from UI immediately, rollback on error
-  const snapshot = optimisticRemoveSession(sessionId, sessionDirectory)
+/**
+ * Discover descendant session IDs following parentID relationships rooted at rootIds.
+ * Returns descendants in post-order (deepest descendants first).
+ * Never touches another main session tree; strictly uses parentID.
+ */
+export function findDescendantSessionIds(
+  rootIds: Iterable<string>,
+  knownSessions: Iterable<Session>,
+): string[] {
+  const rootSet = new Set(rootIds)
+  const childrenByParent = new Map<string, Session[]>()
+  for (const session of knownSessions) {
+    if (session.parentID) {
+      const list = childrenByParent.get(session.parentID) ?? []
+      list.push(session)
+      childrenByParent.set(session.parentID, list)
+    }
+  }
+
+  const orderedDescendantIds: string[] = []
+  const visited = new Set<string>(rootSet)
+
+  const traverse = (parentId: string) => {
+    const children = childrenByParent.get(parentId) ?? []
+    for (const child of children) {
+      if (!visited.has(child.id)) {
+        visited.add(child.id)
+        traverse(child.id)
+        orderedDescendantIds.push(child.id)
+      }
+    }
+  }
+
+  for (const rootId of rootSet) {
+    traverse(rootId)
+  }
+
+  return Array.from(new Set(orderedDescendantIds))
+}
+
+function isSessionNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const err = error as Record<string, unknown>
+  if (err.status === 404 || err.statusCode === 404 || err.code === 404) return true
+
+  const res = err.response as Record<string, unknown> | undefined
+  if (res && (res.status === 404 || res.statusCode === 404)) return true
+
+  const cause = err.cause as Record<string, unknown> | undefined
+  if (cause) {
+    if (cause.status === 404 || cause.statusCode === 404 || cause.code === 404) return true
+    const causeRes = cause.response as Record<string, unknown> | undefined
+    if (causeRes && (causeRes.status === 404 || causeRes.statusCode === 404)) return true
+  }
+
+  return false
+}
+
+export async function deleteSessions(
+  ids: string[],
+  _options?: Record<string, unknown>,
+): Promise<{ deletedIds: string[]; failedIds: string[] }> {
+  void _options
+  const rawIds = Array.from(new Set(ids.filter(Boolean)))
+  if (rawIds.length === 0) {
+    return { deletedIds: [], failedIds: [] }
+  }
+
+  // 1. Gather all currently known sessions across child stores and global stores
+  const sessionMap = new Map<string, Session>()
+  const childStoreBySessionId = new Map<string, string>()
+
+  if (_childStores) {
+    for (const [dir, store] of _childStores.children) {
+      for (const session of store.getState().session) {
+        sessionMap.set(session.id, session)
+        childStoreBySessionId.set(session.id, dir)
+      }
+    }
+  }
+  const globalStore = useGlobalSessionsStore.getState()
+  for (const session of globalStore.activeSessions) {
+    if (!sessionMap.has(session.id)) sessionMap.set(session.id, session)
+  }
+  for (const session of globalStore.archivedSessions) {
+    if (!sessionMap.has(session.id)) sessionMap.set(session.id, session)
+  }
+
+  // 2. Discover all descendants in the parentID trees rooted at rawIds
+  const descendantIds = findDescendantSessionIds(rawIds, sessionMap.values())
+  const allTargetIds = Array.from(new Set([...descendantIds, ...rawIds]))
+  const allTargetIdSet = new Set(allTargetIds)
+
+  // 3. PREFLIGHT: Capture authoritative directory per target BEFORE any store removal or await
+  // Sources:
+  // a) Matching child store key
+  // b) Session UI store registry / attachment
+  // c) session.directory / project.worktree from session object
+  const targetDirectoryMap = new Map<string, string>()
   const ui = useSessionUIStore.getState()
-  if (ui.currentSessionId === sessionId) {
+
+  for (const id of allTargetIds) {
+    let dir: string | null = childStoreBySessionId.get(id) ?? null
+    if (!dir) {
+      const session = sessionMap.get(id)
+      if (session) {
+        const s = session as { directory?: string | null; project?: { worktree?: string | null } | null }
+        if (s.directory) {
+          dir = s.directory
+        } else if (s.project?.worktree) {
+          dir = s.project.worktree
+        }
+      }
+    }
+    if (!dir) {
+      dir = ui.getDirectoryForSession(id)
+    }
+
+    if (!dir) {
+      // Fail closed: abort before any optimistic removal or await!
+      console.error(`[session-actions] Cannot resolve authoritative directory for session ${id}; failing closed`)
+      return { deletedIds: [], failedIds: allTargetIds }
+    }
+    targetDirectoryMap.set(id, dir)
+  }
+
+  // 4. Children-first server delete order: deepest descendants first, then roots last
+  const nonRootDescendants = descendantIds.filter((id) => !rawIds.includes(id))
+  const finalDeleteOrder = Array.from(
+    new Set([
+      ...nonRootDescendants,
+      ...rawIds.filter((id) => descendantIds.includes(id)),
+      ...rawIds.filter((id) => !descendantIds.includes(id)),
+    ]),
+  )
+
+  // 5. Clear currentSessionId synchronously if it is in the removed subtree
+  if (ui.currentSessionId && allTargetIdSet.has(ui.currentSessionId)) {
     ui.setCurrentSession(null)
   }
-  try {
-    await sdk().session.delete({ sessionID: sessionId, directory: sessionDirectory })
-    useGlobalSessionsStore.getState().removeSessions([sessionId])
-    return true
-  } catch (error) {
-    console.error("[session-actions] deleteSession failed", error)
-    if (snapshot) getDirectoryStore(sessionDirectory).setState({ session: snapshot })
-    return false
+
+  // 6. Optimistically remove from global store synchronously before any await
+  globalStore.removeSessions(allTargetIdSet)
+  for (const id of allTargetIds) {
+    markSessionDeleted(id)
   }
+
+  // 7. Optimistically remove from child directory stores and caches synchronously before any await
+  // DO NOT mutate sessionTotal; leave event reducer / SSE authoritative to prevent double decrement!
+  if (_childStores) {
+    for (const [dir, store] of _childStores.children) {
+      const state = store.getState()
+      const hasMatchingSessions = state.session.some((s) => allTargetIdSet.has(s.id))
+      const matchingCacheIds = new Set<string>()
+      for (const id of allTargetIds) {
+        if (
+          state.message[id] ||
+          state.part[id] ||
+          state.todo[id] ||
+          state.session_status[id] ||
+          state.session_diff[id] ||
+          state.permission[id] ||
+          state.question[id]
+        ) {
+          matchingCacheIds.add(id)
+        }
+      }
+
+      if (!hasMatchingSessions && matchingCacheIds.size === 0) {
+        // Untouched branch: preserve reference per performance rules
+        continue
+      }
+
+      const nextSession = hasMatchingSessions
+        ? state.session.filter((s) => !allTargetIdSet.has(s.id))
+        : state.session
+
+      const patch: Partial<State> = {
+        session: nextSession,
+      }
+
+      if (matchingCacheIds.size > 0) {
+        const nextMessage = { ...state.message }
+        const nextPart = { ...state.part }
+        const nextTodo = { ...state.todo }
+        const nextStatus = { ...state.session_status }
+        const nextDiff = { ...state.session_diff }
+        const nextPermission = { ...state.permission }
+        const nextQuestion = { ...state.question }
+
+        for (const id of matchingCacheIds) {
+          delete nextMessage[id]
+          delete nextPart[id]
+          delete nextTodo[id]
+          delete nextStatus[id]
+          delete nextDiff[id]
+          delete nextPermission[id]
+          delete nextQuestion[id]
+        }
+
+        for (const key of Object.keys(nextPart)) {
+          const parts = nextPart[key]
+          if (parts?.some((p) => allTargetIdSet.has((p as { sessionID?: string })?.sessionID ?? ""))) {
+            delete nextPart[key]
+          }
+        }
+
+        patch.message = nextMessage
+        patch.part = nextPart
+        patch.todo = nextTodo
+        patch.session_status = nextStatus
+        patch.session_diff = nextDiff
+        patch.permission = nextPermission
+        patch.question = nextQuestion
+      }
+
+      store.setState(patch)
+      clearSessionPrefetch(dir, allTargetIdSet)
+    }
+  }
+
+  // 8. Execute server deletes in children-first order using immutable captured directory map
+  const directlyDeletedIds = new Set<string>()
+  const directlyFailedIds = new Set<string>()
+
+  for (const id of finalDeleteOrder) {
+    const sessionDirectory = targetDirectoryMap.get(id)!
+    try {
+      const response = await sdk().session.delete({ sessionID: id, directory: sessionDirectory })
+      if (response && "error" in response && response.error) {
+        if (isSessionNotFound(response.error) || response.response?.status === 404) {
+          directlyDeletedIds.add(id)
+        } else {
+          console.error(`[session-actions] deleteSession failed for ${id}:`, response.error)
+          directlyFailedIds.add(id)
+        }
+      } else if (response && "data" in response && response.data === false) {
+        directlyFailedIds.add(id)
+      } else {
+        directlyDeletedIds.add(id)
+      }
+    } catch (error) {
+      if (isSessionNotFound(error)) {
+        directlyDeletedIds.add(id)
+      } else {
+        console.error(`[session-actions] deleteSession failed for ${id}:`, error)
+        directlyFailedIds.add(id)
+      }
+    }
+  }
+
+  // 9. Cascade semantics: If an ancestor delete succeeded, all of its descendants
+  // are confirmed deleted by cascade, regardless of earlier child response. Never restore those.
+  const confirmedDeletedIds = new Set<string>(directlyDeletedIds)
+  for (const id of directlyDeletedIds) {
+    const cascadedChildIds = findDescendantSessionIds([id], sessionMap.values())
+    for (const cid of cascadedChildIds) {
+      confirmedDeletedIds.add(cid)
+    }
+  }
+
+  // Candidates for restore: targets that failed AND are not covered by any successful ancestor
+  const unconfirmedFailedIds = allTargetIds.filter((id) => !confirmedDeletedIds.has(id))
+
+  // 10. For failed targets not covered by a successful ancestor, reconcile authoritative existence
+  // via sdk().session.get() with captured directory before restoring.
+  // 404 means deleted. Restore only authoritative server records that still exist.
+  const finalDeletedIds = new Set<string>(confirmedDeletedIds)
+  const finalFailedIds = new Set<string>()
+
+  for (const id of unconfirmedFailedIds) {
+    const sessionDirectory = targetDirectoryMap.get(id)!
+    const capturedVersion = getSessionMutationVersion(id)
+    try {
+      const getRes = await sdk().session.get({ sessionID: id, directory: sessionDirectory })
+      if (getRes && "error" in getRes && getRes.error) {
+        if (isSessionNotFound(getRes.error) || getRes.response?.status === 404) {
+          // 404 means confirmed deleted on server!
+          finalDeletedIds.add(id)
+        } else {
+          finalFailedIds.add(id)
+        }
+      } else if (getRes && "data" in getRes && getRes.data) {
+        // Authoritative record still exists on server:
+        finalFailedIds.add(id)
+
+        // Generation / tombstone check:
+        // If an SSE event (session.deleted or session.updated) arrived while GET was pending,
+        // generation will have changed; never apply this stale GET result!
+        if (getSessionMutationVersion(id) !== capturedVersion) {
+          continue
+        }
+
+        const authoritativeSession = getRes.data
+        const serverUpdated = authoritativeSession.time?.updated ?? authoritativeSession.time?.created ?? 0
+
+        // Restore to global store only if no newer record already exists in global store
+        const currentGlobalState = useGlobalSessionsStore.getState()
+        const existingGlobal = currentGlobalState.activeSessions.find((s) => s.id === id)
+          ?? currentGlobalState.archivedSessions.find((s) => s.id === id)
+        const existingGlobalUpdated = existingGlobal?.time?.updated ?? existingGlobal?.time?.created ?? 0
+
+        if (!existingGlobal || serverUpdated > existingGlobalUpdated) {
+          currentGlobalState.upsertSession(authoritativeSession)
+        }
+
+        // Restore to child store maintaining unique sorted invariant via Binary.search
+        // without overwriting newer existing record
+        if (_childStores) {
+          const store = _childStores.children.get(sessionDirectory)
+          if (store) {
+            const currentSessions = [...store.getState().session]
+            const search = Binary.search(currentSessions, authoritativeSession.id, (s) => s.id)
+            if (search.found) {
+              const current = currentSessions[search.index]
+              const currentUpdated = current.time?.updated ?? current.time?.created ?? 0
+              if (serverUpdated > currentUpdated) {
+                currentSessions[search.index] = authoritativeSession
+                store.setState({ session: currentSessions })
+              }
+            } else {
+              currentSessions.splice(search.index, 0, authoritativeSession)
+              store.setState({ session: currentSessions })
+            }
+          }
+        }
+      } else {
+        finalFailedIds.add(id)
+      }
+    } catch (error) {
+      if (isSessionNotFound(error)) {
+        finalDeletedIds.add(id)
+      } else {
+        // Ambiguous / network error: do NOT resurrect stale snapshot; surface failure explicitly
+        finalFailedIds.add(id)
+      }
+    }
+  }
+
+  if (finalFailedIds.size > 0) {
+    void useGlobalSessionsStore.getState().loadSessions().catch(() => {})
+  }
+
+  return {
+    deletedIds: allTargetIds.filter((id) => finalDeletedIds.has(id)),
+    failedIds: allTargetIds.filter((id) => finalFailedIds.has(id)),
+  }
+}
+
+export async function deleteSession(sessionId: string, options?: Record<string, unknown>): Promise<boolean> {
+  const result = await deleteSessions([sessionId], options)
+  return result.deletedIds.includes(sessionId)
 }
 
 /** Delete a session specifying which directory it lives in. Used by agent groups for cross-directory deletes. */
 export async function deleteSessionInDirectory(sessionId: string, directory: string): Promise<boolean> {
-  if (!_childStores) return false
-  const store = _childStores.ensureChild(directory)
-  const current = store.getState()
-  const sessions = [...current.session]
-  const result = Binary.search(sessions, sessionId, (s) => s.id)
-  let snapshot: Session[] | null = null
-  if (result.found) {
-    snapshot = current.session
-    sessions.splice(result.index, 1)
-    store.setState({ session: sessions })
+  if (directory) {
+    registerSessionDirectory(sessionId, directory)
   }
-  const ui = useSessionUIStore.getState()
-  if (ui.currentSessionId === sessionId) ui.setCurrentSession(null)
-  try {
-    await sdk().session.delete({ sessionID: sessionId, directory })
-    useGlobalSessionsStore.getState().removeSessions([sessionId])
-    return true
-  } catch (error) {
-    console.error("[session-actions] deleteSessionInDirectory failed", error)
-    if (snapshot) store.setState({ session: snapshot })
-    return false
-  }
+  return deleteSession(sessionId)
 }
 
 export async function archiveSession(sessionId: string): Promise<boolean> {

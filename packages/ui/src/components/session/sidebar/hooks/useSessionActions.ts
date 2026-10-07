@@ -8,6 +8,7 @@ type DeleteSessionConfirmSetter = React.Dispatch<React.SetStateAction<{
   session: Session;
   descendantCount: number;
   archivedBucket: boolean;
+  hardDelete?: boolean;
 } | null>>;
 
 type Args = {
@@ -36,7 +37,7 @@ type Args = {
   childrenMap: Map<string, Session[]>;
   showDeletionDialog: boolean;
   setDeleteSessionConfirm: DeleteSessionConfirmSetter;
-  deleteSessionConfirm: { session: Session; descendantCount: number; archivedBucket: boolean } | null;
+  deleteSessionConfirm: { session: Session; descendantCount: number; archivedBucket: boolean; hardDelete?: boolean } | null;
   setEditingId: (id: string | null) => void;
   setEditTitle: (value: string) => void;
   editingId: string | null;
@@ -162,11 +163,15 @@ export const useSessionActions = (args: Args) => {
 
   const collectDescendants = React.useCallback((sessionId: string): Session[] => {
     const collected: Session[] = [];
+    const visited = new Set<string>([sessionId]);
     const visit = (id: string) => {
       const children = args.childrenMap.get(id) ?? [];
       children.forEach((child) => {
-        collected.push(child);
-        visit(child.id);
+        if (!visited.has(child.id)) {
+          visited.add(child.id);
+          visit(child.id);
+          collected.push(child);
+        }
       });
     };
     visit(sessionId);
@@ -174,9 +179,9 @@ export const useSessionActions = (args: Args) => {
   }, [args.childrenMap]);
 
   const executeDeleteSession = React.useCallback(
-    async (session: Session, source?: { archivedBucket?: boolean }) => {
+    async (session: Session, source?: { archivedBucket?: boolean; hardDelete?: boolean }) => {
       const descendants = collectDescendants(session.id);
-      const shouldHardDelete = source?.archivedBucket === true;
+      const shouldHardDelete = source?.hardDelete === true || source?.archivedBucket === true;
       if (descendants.length === 0) {
         const success = shouldHardDelete
           ? await args.deleteSession(session.id)
@@ -193,7 +198,10 @@ export const useSessionActions = (args: Args) => {
         return;
       }
 
-      const ids = [session.id, ...descendants.map((s) => s.id)];
+      const ids = shouldHardDelete
+        ? [...descendants.map((s) => s.id), session.id]
+        : [session.id, ...descendants.map((s) => s.id)];
+
       if (shouldHardDelete) {
         const { deletedIds, failedIds } = await args.deleteSessions(ids);
         if (deletedIds.length > 0) {
@@ -225,22 +233,27 @@ export const useSessionActions = (args: Args) => {
   );
 
   const handleDeleteSession = React.useCallback(
-    (session: Session, source?: { archivedBucket?: boolean }) => {
+    (session: Session, source?: { archivedBucket?: boolean; hardDelete?: boolean }) => {
       const descendants = collectDescendants(session.id);
       if (!args.showDeletionDialog) {
         void executeDeleteSession(session, source);
         return;
       }
-      args.setDeleteSessionConfirm({ session, descendantCount: descendants.length, archivedBucket: source?.archivedBucket === true });
+      args.setDeleteSessionConfirm({
+        session,
+        descendantCount: descendants.length,
+        archivedBucket: source?.archivedBucket === true,
+        hardDelete: source?.hardDelete === true,
+      });
     },
     [args, collectDescendants, executeDeleteSession],
   );
 
   const confirmDeleteSession = React.useCallback(async () => {
     if (!args.deleteSessionConfirm) return;
-    const { session, archivedBucket } = args.deleteSessionConfirm;
+    const { session, archivedBucket, hardDelete } = args.deleteSessionConfirm;
     args.setDeleteSessionConfirm(null);
-    await executeDeleteSession(session, { archivedBucket });
+    await executeDeleteSession(session, { archivedBucket, hardDelete });
   }, [args, executeDeleteSession]);
 
   return {

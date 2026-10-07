@@ -21,7 +21,15 @@ declare module "bun:test" {
       toContain(expected: unknown): void;
     };
   };
+  export function beforeAll(fn: () => void | Promise<void>): void;
+  export function afterAll(fn: () => void | Promise<void>): void;
   export function beforeEach(fn: () => void | Promise<void>): void;
+  export function afterEach(fn: () => void | Promise<void>): void;
+  export interface MockSpy {
+    mockImplementation(fn: unknown): MockSpy;
+    mockRestore(): void;
+  }
+  export function spyOn<T extends object, K extends keyof T>(obj: T, method: K): MockSpy;
   export function mock<T extends (...args: never[]) => unknown>(fn?: T): T;
   export namespace mock {
     function module(moduleName: string, factory: () => Record<string, unknown>): void;

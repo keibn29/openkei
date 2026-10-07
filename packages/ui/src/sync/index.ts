@@ -138,11 +138,23 @@ export {
   type PersistedDirCache,
 } from "./persist-cache"
 
+// Session mutation versioning
+export {
+  getSessionMutationVersion,
+  bumpSessionMutationVersion,
+  markSessionDeleted,
+  isSessionMarkedDeleted,
+  clearSessionDeleted,
+  clearSessionMutationVersions,
+} from "./session-mutation-version"
+
 // Session actions
 export {
   setActionRefs,
   createSession,
   deleteSession,
+  deleteSessions,
+  findDescendantSessionIds,
   archiveSession,
   updateSessionTitle,
   shareSession,

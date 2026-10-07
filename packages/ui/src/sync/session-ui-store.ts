@@ -41,6 +41,7 @@ import { setActiveSession } from "./sync-context"
 import {
   createSession as createSessionAction,
   deleteSession as deleteSessionAction,
+  deleteSessions as deleteSessionsAction,
   archiveSession as archiveSessionAction,
   updateSessionTitle as updateSessionTitleAction,
   shareSession as shareSessionAction,
@@ -1092,18 +1093,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // deleteSession — calls SDK, SSE event updates child store
   // ---------------------------------------------------------------------------
-  deleteSession: (id) => deleteSessionAction(id),
+  deleteSession: (id, options) => deleteSessionAction(id, options),
 
-  deleteSessions: async (ids) => {
-    const deletedIds: string[] = []
-    const failedIds: string[] = []
-    for (const id of ids) {
-      const ok = await deleteSessionAction(id)
-      if (ok) deletedIds.push(id)
-      else failedIds.push(id)
-    }
-    return { deletedIds, failedIds }
-  },
+  deleteSessions: (ids, options) => deleteSessionsAction(ids, options),
 
   archiveSession: (id) => archiveSessionAction(id),
 
